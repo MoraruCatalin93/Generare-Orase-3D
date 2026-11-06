@@ -1,0 +1,40 @@
+name: 🐞 Raportare bug
+description: Ceva nu merge (generare, viewer, hartă, instalare)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Mulțumesc pentru raport! Rulează întâi `python3 -m terragen check` și lipește rezultatul.
+  - type: textarea
+    id: ce
+    attributes:
+      label: Ce se întâmplă
+      description: Ce ai făcut, ce te așteptai, ce s-a întâmplat.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Pași de reproducere
+      placeholder: |
+        1. ./start.sh
+        2. selectez zonă de 1200 m în Târgu Mureș
+        3. apăs „Generează orașul 3D”
+        4. ...
+  - type: input
+    id: zona
+    attributes:
+      label: Zona (lat, lon, latură) și sursa de date
+      placeholder: "46.5446, 24.5612 · 1200 m · Overpass / romania.osm.pbf"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / traceback
+      description: Din panoul „progres" din aplicație sau din terminal.
+      render: shell
+  - type: input
+    id: env
+    attributes:
+      label: Sistem
+      placeholder: "macOS 15.3 · Python 3.12.4 · Chrome 141"

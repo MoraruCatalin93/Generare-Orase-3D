@@ -1,0 +1,19 @@
+# normalizare linii
+* text=auto eol=lf
+
+# scripturi executabile
+*.sh  text eol=lf
+*.ps1 text eol=crlf
+*.command text eol=lf
+
+# binare
+*.png binary
+*.jpg binary
+*.glb binary
+*.r16 binary
+*.pbf binary
+*.zip binary
+
+# vendor (cod terț, nu-l reformata)
+terragen/web/viewer/vendor/** linguist-vendored
+terragen/web/ui/vendor/** linguist-vendored

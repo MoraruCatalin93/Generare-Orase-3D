@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest · py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Instalez dependențele
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Teste (offline — DEM fals, fără rețea)
+        run: pytest -q
+
+      - name: Verific încărcarea pachetului
+        run: |
+          python -m terragen --version
+          python -m terragen check
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  import-smoke:
+    name: build static (fără rețea)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Serverul pornește și răspunde
+        run: |
+          python -m terragen serve --no-browser --port 8799 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8799/api/health && break || sleep 1
+          done
+          curl -sf http://127.0.0.1:8799/api/health
+          curl -sf http://127.0.0.1:8799/ > /dev/null
+          curl -sf http://127.0.0.1:8799/viewer/ > /dev/null
+          curl -sf http://127.0.0.1:8799/vendor/maplibre-gl.js > /dev/null
+          curl -sf http://127.0.0.1:8799/viewer/vendor/three.module.js > /dev/null

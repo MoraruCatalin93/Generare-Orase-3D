@@ -1,0 +1,22 @@
+name: ✨ Idee / funcționalitate
+description: Ce ar merita adăugat
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ce ai vrea să existe
+    validations:
+      required: true
+  - type: dropdown
+    id: zona
+    attributes:
+      label: Unde se încadrează
+      options:
+        - Date OSM (multipolygon, poduri, tuneluri, vegetație)
+        - Geometrie / aspect (acoperișuri, fațade, materiale)
+        - Viewer 3D
+        - Interfață / flux de lucru
+        - Export / integrări engine
+        - Performanță
+        - Altele

@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+sites/
+dist/
+*.osm.pbf
+*.osm.pbf.part
+.pytest_cache/
