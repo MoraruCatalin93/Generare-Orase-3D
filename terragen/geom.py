@@ -65,11 +65,6 @@ class Mesh:
         out.f = np.vstack([self.f, other.f + len(self.v)])
         return out
 
-    def bounds(self):
-        if not len(self.v):
-            return None
-        return self.v.min(axis=0), self.v.max(axis=0)
-
     def __repr__(self) -> str:
         return f"<Mesh {len(self.v)} vârfuri, {len(self.f)} triunghiuri>"
 

@@ -27,7 +27,14 @@ Rescriere ca pipeline web: **fără Unity, fără Blender**. Rezultatul se vede 
 - **Drumuri drapate pe teren** (contururi densificate + altitudine din DEM) în loc de altitudinea
   celui mai apropiat punct de pe axă (care terasa asfaltul pe pante).
 - **Acoperișurile**: corectat winding-ul fețelor în două ape (normalele ieșeau în jos).
-- Curățenie: scos `render.py` (preview-ul îl face viewer-ul), parametri morți, funcții nefolosite.
+- Curățenie (audit cu `vulture` + `ruff`): scos `render.py` (preview-ul îl face viewer-ul),
+  funcțiile nefolosite din `facade.py` și `Mesh.bounds`, cheile de paletă moarte
+  (`asphalt_minor`, `grass`, `roof`), parametrul `preview` din `generate()` și variabilele
+  nefolosite din `pbflite.py`. Versiunea are acum o singură sursă (`terragen/__init__.py`).
+- 6 teste de igienă noi (`tests/test_project_hygiene.py`): versiune unică, `.gitignore` complet,
+  nimic generat în git, fără CDN în UI/viewer, fără rămășițe de debug (`console.log`, `breakpoint()`).
+- Config de editor: `.vscode/` (settings, launch pentru serve/teste, extensii recomandate),
+  `.editorconfig` actualizat.
 
 ### Scos
 - `unity/` (shader URP + `RoadNetworkLoader`), `blender/` (importer), editorul separat de zone,

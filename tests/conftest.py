@@ -122,7 +122,6 @@ def built(tmp_path, ways, fake_dem, monkeypatch):
         out=str(out),
         ways=ways,
         formats=("glb",),
-        preview=False,
         log=lambda *_: None,
     )
     return out, manifest

@@ -300,7 +300,8 @@ function updateStats(manifest) {
   $('stats').innerHTML =
     `<b>${fmt(state.tris)}</b> triunghiuri · <b>${fmt(st.buildings || 0)}</b> clădiri · ` +
     `<b>${fmt(manifest.network?.edges || 0)}</b> segmente de drum · ` +
-    `altitudini ${st.terrain_elev_range?.[0] ?? '–'}…${st.terrain_elev_range?.[1] ?? '–'} m`;
+    `altitudini ${st.terrain_elev_range?.[0] ?? '–'}…${st.terrain_elev_range?.[1] ?? '–'} m` +
+    '<span class="fps"></span>';
 }
 
 /* ------------------------------------------------------------ soare */
@@ -370,7 +371,6 @@ let acc = 0, frames = 0, fps = 0;
 function tick() {
   const dt = clock.getDelta();
   if (spinning) {
-    const r = state.span * 0.85;
     const a = 0.12 * dt;
     const p = camera.position.clone().sub(controls.target);
     const cos = Math.cos(a), sin = Math.sin(a);
@@ -378,14 +378,16 @@ function tick() {
       controls.target.x + p.x * cos - p.z * sin,
       camera.position.y,
       controls.target.z + p.x * sin + p.z * cos);
-    void r;
     controls.update();
   }
   controls.update();
   renderer.render(scene, camera);
   acc += dt; frames++;
-  if (acc > 0.6) { fps = Math.round(frames / acc); acc = 0; frames = 0;
-    $('stats').dataset.fps = fps; }
+  if (acc > 0.6) {
+    fps = Math.round(frames / acc); acc = 0; frames = 0;
+    const f = $('stats').querySelector('.fps');
+    if (f) f.textContent = ` · ${fps} fps`;
+  }
   requestAnimationFrame(tick);
 }
 

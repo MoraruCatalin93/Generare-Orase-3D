@@ -2,7 +2,7 @@
    terragen-web · UI: hartă → selectezi zona → generezi → deschizi viewer-ul 3D
    ========================================================================= */
 const $ = (id) => document.getElementById(id);
-const state = { cfg: null, zone: null, job: null, selecting: false, es: null, t0: 0 };
+const state = { cfg: null, zone: null, job: null, selecting: false, es: null };
 
 /* ------------------------------------------------------------------ harta */
 const HOME = [24.5612, 46.5446];

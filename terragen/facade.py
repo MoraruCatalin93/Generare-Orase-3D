@@ -13,9 +13,7 @@ culoarea per clădire vine din vertex colors, iar geamurile din textură — un 
 from __future__ import annotations
 
 import io
-from pathlib import Path
 
-import numpy as np
 from PIL import Image, ImageDraw
 
 TILE = 128
@@ -58,25 +56,3 @@ def facade_png(tile: int = TILE) -> bytes:
     buf = io.BytesIO()
     facade_image(tile).save(buf, format="PNG", optimize=True)
     return buf.getvalue()
-
-
-def write_facade_texture(path: Path, tile: int = TILE) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(facade_png(tile))
-    return path
-
-
-def wall_and_roof_colors(wall_rgb, cap: np.ndarray, base_row: np.ndarray | None = None):
-    """Culori per vertex: pereți = culoarea clădirii, capac = culoarea acoperișului.
-
-    Alpha rămâne 255 peste tot (nu mai codifică „perețe vs acoperiș" ca în varianta cu shader),
-    dar păstrăm convenția 1/0 ca să fie clar pentru cine citește mesh-ul.
-    """
-    cols = np.zeros((len(cap), 4), dtype=np.uint8)
-    cols[:, :3] = np.asarray(wall_rgb, dtype=np.uint8)
-    cols[:, 3] = 255
-    cols[cap, 3] = 255
-    if base_row is not None:
-        darker = np.clip(np.asarray(wall_rgb, dtype=np.float64) * 0.82, 0, 255).astype(np.uint8)
-        cols[base_row & ~cap, :3] = darker
-    return cols

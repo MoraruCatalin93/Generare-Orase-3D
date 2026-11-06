@@ -123,7 +123,7 @@ def read_ways(path: str, bbox, wanted, progress=None):
     nodes: dict[int, tuple[float, float]] = {}
     out: list[dict] = []
 
-    def handle_group(gdata: bytes, strings: list[str], gran: int, lat_off: int, lon_off: int):
+    def handle_group(gdata: bytes, strings: list[str]):
         for fn, _wt, v in _fields(gdata):
             if fn == 2:  # DenseNodes
                 _dense(v)
@@ -245,5 +245,5 @@ def read_ways(path: str, bbox, wanted, progress=None):
             elif fn == 20:
                 lon_off_ref[0] = _signed(v)
         for g in groups:
-            handle_group(g, strings, gran_ref[0], lat_off_ref[0], lon_off_ref[0])
+            handle_group(g, strings)
     return out

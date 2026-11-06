@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "terragen: aplicația (hartă + generator + viewer)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "terragen",
+      "args": ["serve", "--no-browser"],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "terragen: pornește cu Overpass (fără .pbf)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "terragen",
+      "args": ["serve", "--no-browser"],
+      "env": { "TERRAGEN_SITES": "${workspaceFolder}/sites" },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "terragen: teste (pytest)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-q"],
+      "console": "integratedTerminal"
+    }
+  ]
+}

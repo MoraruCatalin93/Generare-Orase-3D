@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from . import __version__
 from .build import CityBuilder
 from .dem import Dem
 from .export import build_network_graph, write_glb, write_heightmap, write_json, write_obj
@@ -12,8 +13,6 @@ from .facade import facade_png
 from .geom import FLOOR_H, MODULE_U
 from .osmdata import fetch_overpass, read_osm
 from .project import LocalProjection
-
-__version__ = "2.0.0"
 
 PRESETS = {
     "targu-mures": (46.5446, 24.5612),
@@ -62,7 +61,6 @@ def generate(
     dem_zoom: int = 15,
     formats=("glb",),
     roofs: bool = True,
-    preview: bool = True,
     seed: int = 7,
     name: str | None = None,
     ways=None,

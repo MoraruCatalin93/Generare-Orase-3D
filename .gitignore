@@ -1,8 +1,25 @@
+# mediu & cache
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# rezultate generate (nu se urcă niciodată)
 sites/
 dist/
+out/
 *.osm.pbf
 *.osm.pbf.part
-.pytest_cache/
+_*.zip
+
+# editor / sistem
+.DS_Store
+.idea/
+*.swp
+*.log
+
+# secrete locale
+.env
