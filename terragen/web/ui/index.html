@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>terragen — orașe 3D din date reale</title>
+<link rel="stylesheet" href="/vendor/maplibre-gl.css" />
+<link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body>
+<div id="map"></div>
+
+<!-- ---------------------------------------------------------------- panou -->
+<aside id="panel">
+  <header>
+    <div class="logo">terragen<span>·web</span></div>
+    <div class="ver" id="ver">v2</div>
+  </header>
+
+  <section>
+    <div class="label">1 · alege zona pe hartă</div>
+    <button id="btnSelect" class="primary wide">▭ Selectează pe hartă</button>
+    <div class="grid2 tight">
+      <label>lat <input id="lat" type="number" step="0.00001" /></label>
+      <label>lon <input id="lon" type="number" step="0.00001" /></label>
+    </div>
+    <div class="grid2 tight">
+      <label>latură (m) <input id="size" type="number" step="50" min="200" max="6000" value="1200" /></label>
+      <label>nume <input id="name" type="text" placeholder="zona-mea" /></label>
+    </div>
+    <div class="hint" id="selInfo">trage un dreptunghi pe hartă sau scrie coordonatele</div>
+  </section>
+
+  <section>
+    <div class="label">2 · detaliu</div>
+    <div class="grid2 tight">
+      <label>teren
+        <select id="terrainRes">
+          <option value="192">192 (rapid)</option>
+          <option value="256" selected>256 (normal)</option>
+          <option value="384">384 (fin)</option>
+          <option value="512">512 (max)</option>
+        </select>
+      </label>
+      <label>seed <input id="seed" type="number" value="7" min="0" max="9999" /></label>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="roofs" checked /> acoperișuri în două ape</label>
+      <label><input type="checkbox" id="obj" /> exportă și OBJ</label>
+      <label><input type="checkbox" id="overpass" /> forțează Overpass API</label>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">3 · generează</div>
+    <button id="btnGo" class="go wide">⬢ Generează orașul 3D</button>
+    <div class="srcInfo" id="srcInfo">verific sursa de date…</div>
+  </section>
+
+  <section id="progWrap" class="hidden">
+    <div class="label">progres <span id="progPct"></span></div>
+    <div class="bar"><i id="progBar"></i></div>
+    <div class="log" id="log"></div>
+    <button id="btnCancel" class="ghost wide">✕ anulează</button>
+  </section>
+
+  <section id="resWrap" class="hidden">
+    <div class="label">rezultat</div>
+    <div class="stats" id="stats"></div>
+    <div class="btns">
+      <a id="btnViewer" class="btn accent" target="_blank">◱ Deschide viewer 3D</a>
+      <a id="btnZip" class="btn" target="_blank">⬇ ZIP</a>
+      <button id="btnFolder" class="btn">📂 folder</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">orașe generate <span id="siteCount"></span></div>
+    <div id="sites" class="sites"></div>
+  </section>
+
+  <footer>
+    date: © OpenStreetMap contributors (ODbL) · relief: Terrarium/AWS
+  </footer>
+</aside>
+
+<div id="cursor" class="pill">altitudine: <b>–</b></div>
+<div id="toast"></div>
+<div id="loading" class="pill">încarc harta…</div>
+
+<script src="/vendor/maplibre-gl.js"></script>
+<script src="/ui/app.js"></script>
+</body>
+</html>

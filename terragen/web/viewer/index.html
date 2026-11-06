@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>terragen — viewer 3D</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #151a21e6; --line: #26303c;
+    --text: #e8edf3; --dim: #93a1b1; --accent: #35d0a5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg);
+               color: var(--text); font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  .panel { position: fixed; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; backdrop-filter: blur(10px); box-shadow: 0 10px 30px #0008; }
+
+  #hud { top: 14px; left: 14px; padding: 12px 14px; width: 268px; }
+  #hud h1 { margin: 0 0 2px; font-size: 14px; letter-spacing: .2px; }
+  #hud .sub { color: var(--dim); font-size: 11.5px; margin-bottom: 10px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+         padding: 3px 0; }
+  .row label { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .row .tris { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  input[type=checkbox] { accent-color: var(--accent); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 9px 0; }
+  .btn { border: 1px solid var(--line); background: #1c232c; color: var(--text);
+         border-radius: 8px; padding: 5px 9px; font-size: 11.5px; cursor: pointer; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+  #stats { bottom: 14px; left: 14px; padding: 8px 12px; color: var(--dim); font-size: 11.5px;
+           font-variant-numeric: tabular-nums; }
+  #stats b { color: var(--text); font-weight: 600; }
+  #hint { bottom: 14px; right: 14px; padding: 8px 12px; color: var(--dim); font-size: 11.5px; }
+  #hint kbd { background: #1c232c; border: 1px solid var(--line); border-radius: 4px;
+              padding: 0 4px; color: var(--text); }
+
+  #loader { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg);
+            z-index: 50; transition: opacity .45s; }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .box { text-align: center; }
+  #loader .bar { width: 220px; height: 3px; background: #222b35; border-radius: 2px;
+                 overflow: hidden; margin: 12px auto 0; }
+  #loader .bar i { display: block; height: 100%; width: 0%; background: var(--accent);
+                   transition: width .25s; }
+  #err { position: fixed; inset: auto 14px 60px 14px; max-width: 640px; margin: auto;
+         padding: 12px 14px; border-radius: 10px; background: #3a1d22; border: 1px solid #7a3038;
+         color: #ffd7db; font-size: 12.5px; display: none; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="panel">
+  <h1 id="siteName">terragen</h1>
+  <div class="sub" id="siteSub">încarc…</div>
+  <div id="layers"></div>
+  <hr />
+  <div class="row"><label><input type="checkbox" id="shadows" checked /> umbre</label>
+    <label><input type="checkbox" id="wire" /> wireframe</label></div>
+  <div class="row"><label><input type="checkbox" id="spin" /> rotire automată</label>
+    <span class="tris" id="sunLabel">soare 14:00</span></div>
+  <div class="row"><input type="range" id="sun" min="6" max="19" step="0.25" value="14" style="width:100%" /></div>
+  <hr />
+  <div class="btns">
+    <button class="btn" id="reset">⌂ vederea de sus</button>
+    <button class="btn" id="shot">⬇ PNG</button>
+    <button class="btn" id="back">← generator</button>
+  </div>
+</div>
+
+<div id="stats" class="panel"></div>
+<div id="hint" class="panel">trage = rotire · scroll = zoom · <kbd>spațiu</kbd> rotire automată</div>
+<div id="loader"><div class="box">
+  <div style="font-size:12px;letter-spacing:.16em;color:#93a1b1">TERRAGEN</div>
+  <div id="loadMsg" style="margin-top:6px">încarc orașul…</div>
+  <div class="bar"><i id="loadBar"></i></div>
+</div></div>
+<div id="err"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const COLORS = {
+  terrain: '#8fa07a', roads: '#4d5561', sidewalks: '#b3b0a6', buildings: '#d8cab2',
+  green: '#6e9e56', forest: '#487242', water: '#4a90a8', pitch: '#609652',
+  parking: '#565a60', industrial: '#74706a', other: '#8a8478',
+};
+const LABELS = {
+  terrain: 'teren', roads: 'drumuri', sidewalks: 'trotuare', buildings: 'clădiri',
+  green: 'spații verzi', forest: 'pădure', water: 'apă', pitch: 'sport',
+  parking: 'parcări', industrial: 'industrial', other: 'altele',
+};
+const TEXTURED = new Set(['buildings']);
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const city = params.get('city') || '.';
+const fmt = (n) => n.toLocaleString('ro-RO');
+
+/* ------------------------------------------------------------- scenă */
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+$('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xc9d6e2, 900, 3000);
+
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 1, 12000);
+camera.position.set(420, 420, 620);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 25;
+controls.maxDistance = 5000;
+controls.screenSpacePanning = false;
+
+/* cer: gradient simplu pe o sferă uriașă */
+{
+  const geo = new THREE.SphereGeometry(9000, 32, 16);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: { top: { value: new THREE.Color(0x4a7fb5) }, bottom: { value: new THREE.Color(0xdfe8ef) } },
+    vertexShader: `varying float h; void main(){ h = normalize(position).y;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `varying float h; uniform vec3 top; uniform vec3 bottom;
+      void main(){ float t = clamp(h*1.15+0.15, 0.0, 1.0);
+      gl_FragColor = vec4(mix(bottom, top, pow(t,0.85)), 1.0); }`,
+  });
+  scene.add(new THREE.Mesh(geo, mat));
+}
+
+/* lumină + soare cu umbre */
+const hemi = new THREE.HemisphereLight(0xbcd6f2, 0x6b6a5e, 1.05);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2dc, 2.35);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.bias = -0.0006;
+scene.add(sun);
+scene.add(sun.target);
+
+const clock = new THREE.Clock();
+const loader = new GLTFLoader();
+const sites = new THREE.Group();
+scene.add(sites);
+
+const state = { layers: {}, meshes: {}, tris: 0, span: 900 };
+
+/* -------------------------------------------------------- încărcare */
+function fail(msg) {
+  $('err').style.display = 'block';
+  $('err').textContent = msg;
+  $('loader').classList.add('done');
+}
+
+async function getJSON(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`${url} → HTTP ${r.status}`);
+  return r.json();
+}
+
+function loadGLB(url) {
+  return new Promise((res, rej) => loader.load(url, res, undefined,
+    (e) => rej(new Error(`nu pot încărca ${url}: ${e?.message || e}`))));
+}
+
+function prepare(mesh, layer) {
+  const textured = TEXTURED.has(layer);
+  mesh.traverse((o) => {
+    if (!o.isMesh) return;
+    const g = o.geometry;
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: !!g.attributes.color,
+      roughness: textured ? 0.86 : 0.95,
+      metalness: 0.0,
+      side: THREE.FrontSide,
+      flatShading: false,
+    });
+    if (textured) {
+      // textura de fațadă vine din GLB; colorăm per-vertex peste ea
+      const src = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (src?.map) {
+        mat.map = src.map;
+        mat.map.colorSpace = THREE.SRGBColorSpace;
+        mat.map.wrapS = mat.map.wrapT = THREE.RepeatWrapping;
+        mat.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      }
+      mat.roughness = 0.8;
+    }
+    mat.color = new THREE.Color(1, 1, 1);
+    o.material = mat;
+    o.castShadow = textured || layer === 'roads' || layer === 'terrain';
+    o.receiveShadow = true;
+    o.userData.baseMaterial = mat;
+  });
+  return mesh;
+}
+
+function addLayerRow(layer, tris) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label><input type="checkbox" checked data-layer="${layer}" />
+      <span class="swatch" style="background:${COLORS[layer] || '#888'}"></span>${LABELS[layer] || layer}</label>
+    <span class="tris">${fmt(tris)} tri</span>`;
+  $('layers').appendChild(row);
+  row.querySelector('input').addEventListener('change', (e) => {
+    const g = sites.getObjectByName('layer-' + layer);
+    if (g) g.visible = e.target.checked;
+  });
+}
+
+async function boot() {
+  let manifest;
+  try {
+    manifest = await getJSON(`${city}/manifest.json`);
+  } catch (e) {
+    fail(`Nu găsesc ${city}/manifest.json\n\n${e.message}\n\n` +
+         `Generează întâi un oraș din pagina principală (sau rulează ./start.sh).`);
+    return;
+  }
+  $('siteName').textContent = manifest.area?.name || 'oraș 3D';
+  $('siteSub').textContent =
+    `${((manifest.area?.size_m || 0) / 1000).toFixed(2)} × ${((manifest.area?.size_m || 0) / 1000).toFixed(2)} km · ` +
+    `seed ${manifest.area?.seed ?? '–'} · ${manifest.generator}`;
+
+  const layers = manifest.layers || Object.keys(manifest.files || {});
+  let done = 0;
+  for (const layer of layers) {
+    const file = manifest.files?.[layer]?.glb || `glb/${layer}.glb`;
+    $('loadMsg').textContent = `încarc ${LABELS[layer] || layer}…`;
+    try {
+      const gltf = await loadGLB(`${city}/${file}`);
+      const root = gltf.scene;
+      root.name = 'layer-' + layer;
+      prepare(root, layer);
+      sites.add(root);
+      state.layers[layer] = root;
+      const tris = (manifest.layers_triangles?.[layer]) || 0;
+      state.tris += tris;
+      addLayerRow(layer, tris);
+    } catch (e) {
+      console.warn(e);
+    }
+    $('loadBar').style.width = `${Math.round(++done / layers.length * 100)}%`;
+  }
+
+  frameToSite(manifest);
+  updateStats(manifest);
+  $('loader').classList.add('done');
+}
+
+function frameToSite(manifest) {
+  const box = new THREE.Box3().setFromObject(sites);
+  if (!box.isEmpty()) {
+    const size = box.getSize(new THREE.Vector3());
+    state.span = Math.max(size.x, size.z);
+    const center = box.getCenter(new THREE.Vector3());
+    controls.target.copy(center);
+    const d = state.span * 0.85;
+    camera.position.set(center.x + d * 0.62, center.y + d * 0.72, center.z + d * 0.95);
+    controls.update();
+    const r = state.span * 1.15;
+    sun.shadow.camera.left = -r;
+    sun.shadow.camera.right = r;
+    sun.shadow.camera.top = r;
+    sun.shadow.camera.bottom = -r;
+    sun.shadow.camera.far = r * 6;
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.target.position.copy(center);
+  }
+  updateSun();
+}
+
+function updateStats(manifest) {
+  const st = manifest.stats || {};
+  $('stats').innerHTML =
+    `<b>${fmt(state.tris)}</b> triunghiuri · <b>${fmt(st.buildings || 0)}</b> clădiri · ` +
+    `<b>${fmt(manifest.network?.edges || 0)}</b> segmente de drum · ` +
+    `altitudini ${st.terrain_elev_range?.[0] ?? '–'}…${st.terrain_elev_range?.[1] ?? '–'} m`;
+}
+
+/* ------------------------------------------------------------ soare */
+const sunInput = $('sun');
+function updateSun() {
+  const h = parseFloat(sunInput.value);              // ora din zi
+  const t = (h - 6) / 13;                            // 0 = răsărit, 1 = apus
+  const az = Math.PI * (0.15 + 0.7 * t);             // est -> vest
+  const el = Math.sin(Math.PI * Math.max(0.02, Math.min(0.98, t))) * 1.15 + 0.06;
+  const dist = Math.max(600, state.span * 1.6);
+  const c = controls.target;
+  sun.position.set(c.x + Math.cos(az) * dist, c.y + Math.sin(el) * dist, c.z + Math.sin(az * 0.8) * dist);
+  sun.target.position.copy(c);
+  const warm = 1 - Math.min(1, Math.abs(h - 13) / 7);
+  sun.color.setHSL(0.10 - 0.06 * warm, 0.55 * warm, 0.62 + 0.18 * warm);
+  sun.intensity = 0.55 + 2.1 * Math.min(1, Math.sin(el) * 1.5);
+  hemi.intensity = 0.45 + 0.75 * Math.min(1, Math.sin(el) * 1.4);
+  const hh = Math.floor(h);
+  $('sunLabel').textContent = `soare ${String(hh).padStart(2, '0')}:${String(Math.round((h - hh) * 60)).padStart(2, '0')}`;
+}
+
+sunInput.addEventListener('input', updateSun);
+$('shadows').addEventListener('change', (e) => {
+  renderer.shadowMap.enabled = e.target.checked;
+  scene.traverse((o) => { if (o.isMesh && o.material) o.material.needsUpdate = true; });
+});
+$('wire').addEventListener('change', (e) => {
+  Object.values(state.layers).forEach((root) => root.traverse((o) => {
+    if (o.isMesh) o.material.wireframe = e.target.checked;
+  }));
+});
+let spinning = false;
+const setSpin = (v) => { spinning = v; $('spin').checked = v; };
+$('spin').addEventListener('change', (e) => setSpin(e.target.checked));
+
+$('reset').addEventListener('click', () => {
+  const box = new THREE.Box3().setFromObject(sites);
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3());
+  const d = Math.max(box.getSize(new THREE.Vector3()).x, box.getSize(new THREE.Vector3()).z);
+  controls.target.copy(c);
+  camera.position.set(c.x + d * 0.02, c.y + d * 1.15, c.z + d * 0.16);
+  controls.update();
+});
+$('shot').addEventListener('click', () => {
+  renderer.render(scene, camera);
+  const a = document.createElement('a');
+  a.href = renderer.domElement.toDataURL('image/png');
+  a.download = 'terragen.png';
+  a.click();
+});
+$('back').addEventListener('click', () => {
+  location.href = new URLSearchParams(location.search).get('back') || '/';
+});
+
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); setSpin(!spinning); }
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ------------------------------------------------------------ buclă */
+let acc = 0, frames = 0, fps = 0;
+function tick() {
+  const dt = clock.getDelta();
+  if (spinning) {
+    const r = state.span * 0.85;
+    const a = 0.12 * dt;
+    const p = camera.position.clone().sub(controls.target);
+    const cos = Math.cos(a), sin = Math.sin(a);
+    camera.position.set(
+      controls.target.x + p.x * cos - p.z * sin,
+      camera.position.y,
+      controls.target.z + p.x * sin + p.z * cos);
+    void r;
+    controls.update();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  acc += dt; frames++;
+  if (acc > 0.6) { fps = Math.round(frames / acc); acc = 0; frames = 0;
+    $('stats').dataset.fps = fps; }
+  requestAnimationFrame(tick);
+}
+
+window.TG = { scene, camera, controls, renderer, sites, sun, state, updateSun };
+boot();
+tick();
+</script>
+</body>
+</html>

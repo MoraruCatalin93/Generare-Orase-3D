@@ -1,0 +1,603 @@
+"""Construiește meshele 3D (teren, drumuri, clădiri, zone verzi, apă) din date OSM + DEM."""
+
+from __future__ import annotations
+
+import hashlib
+import math
+from collections import defaultdict
+
+import numpy as np
+from shapely import segmentize
+from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import unary_union
+
+from .geom import FLOOR_H, MODULE_U, Mesh, extrude, resample, smooth_1d, triangulate_polygon
+from .geom import box as box_geom
+
+# ------------------------------------------------------------------ stil / paletă
+# Tabelele de stil sunt ținute compact intenționat (se citesc ca un tabel) — de aceea
+# sunt protejate de formatter cu fmt: off.
+# fmt: off
+WALK_HIGHWAYS = {"footway", "path", "pedestrian", "cycleway", "steps", "bridleway", "corridor"}
+SKIP = {"proposed", "construction", "abandoned", "platform", "bus_stop", "elevator",
+        "raceway", "busway"}
+
+BASE_WIDTH = {
+    "motorway": 14.0, "motorway_link": 8.0, "trunk": 13.0, "trunk_link": 8.0,
+    "primary": 11.0, "primary_link": 7.0, "secondary": 9.5, "secondary_link": 7.0,
+    "tertiary": 8.5, "tertiary_link": 6.5, "residential": 7.0, "unclassified": 6.5,
+    "living_street": 6.0, "service": 4.5, "track": 3.5, "pedestrian": 5.0,
+    "footway": 2.2, "path": 1.8, "cycleway": 2.5, "steps": 2.2, "bridleway": 2.0,
+}
+
+C = {
+    "terrain_low": (146, 154, 136), "terrain_high": (170, 162, 138), "rock": (122, 120, 116),
+    "asphalt": (72, 76, 84), "asphalt_minor": (84, 88, 96), "walk": (163, 160, 152),
+    "grass": (110, 158, 86), "green": (110, 158, 86), "forest": (72, 114, 66),
+    "pitch": (96, 150, 82), "water": (68, 128, 165), "parking": (86, 90, 96),
+    "industrial": (116, 112, 102), "other": (138, 132, 120),
+}
+
+ROOF_COLORS = [        # țiglă / tablă / gudron
+    (178, 88, 68), (166, 76, 60), (150, 92, 70), (132, 84, 68),
+    (110, 96, 90), (96, 102, 108), (124, 78, 64), (160, 104, 74),
+]
+DETAIL_COLORS = [(120, 116, 110), (104, 102, 100), (138, 132, 124)]
+
+BUILDING_PALETTE = [
+    (216, 202, 178), (201, 181, 156), (223, 212, 192), (185, 172, 152),
+    (209, 190, 166), (172, 178, 178), (226, 218, 203), (194, 168, 143),
+    (207, 197, 181), (166, 158, 148),
+]
+
+HEIGHT_DEFAULTS = {
+    "house": 7.5, "detached": 8.0, "semidetached_house": 8.0, "terrace": 8.5,
+    "bungalow": 5.0, "apartments": 17.0, "residential": 15.0, "dormitory": 16.0,
+    "commercial": 11.0, "retail": 9.0, "kiosk": 3.0, "supermarket": 8.0,
+    "industrial": 10.0, "warehouse": 11.0, "factory": 12.0, "garage": 3.0,
+    "garages": 3.0, "shed": 2.8, "hut": 2.8, "roof": 4.0, "church": 20.0,
+    "cathedral": 30.0, "chapel": 12.0, "school": 12.0, "university": 15.0,
+    "hospital": 20.0, "office": 18.0, "hotel": 16.0, "civic": 14.0,
+    "public": 13.0, "train_station": 12.0, "yes": 9.0,
+}
+# fmt: on
+
+
+def _num(txt):
+    try:
+        return float(str(txt).replace("m", "").replace(",", ".").strip().split()[0])
+    except Exception:
+        return None
+
+
+def road_width(tags) -> float:
+    hw = tags.get("highway", "")
+    w = _num(tags.get("width")) if tags.get("width") else None
+    if w and 1.0 <= w <= 40.0:
+        return w
+    base = BASE_WIDTH.get(hw, 6.0)
+    lanes = _num(tags.get("lanes"))
+    if lanes and lanes >= 1:
+        base = max(base, lanes * 3.0 + 1.0)
+    if tags.get("sidewalk") in ("both", "yes"):
+        base += 1.6
+    return base
+
+
+def building_height(tags, wid: int, seed: int = 0) -> float:
+    for key in ("height", "building:height"):
+        h = _num(tags.get(key)) if tags.get(key) else None
+        if h and 2.0 <= h <= 200.0:
+            return h
+    lv = _num(tags.get("building:levels")) if tags.get("building:levels") else None
+    if lv and 1 <= lv <= 60:
+        return lv * 3.1 + 1.2
+    bt = tags.get("building") or tags.get("building:part") or "yes"
+    base = HEIGHT_DEFAULTS.get(bt, 9.0)
+    rnd = (int(hashlib.md5(f"{wid}-{seed}".encode()).hexdigest()[:6], 16) % 1000) / 1000.0
+    return max(2.6, base * (0.8 + 0.5 * rnd))
+
+
+def area_kind(tags):
+    natural = tags.get("natural")
+    landuse = tags.get("landuse")
+    leisure = tags.get("leisure")
+    waterway = tags.get("waterway")
+    amenity = tags.get("amenity")
+    if (
+        natural == "water"
+        or waterway in {"riverbank", "dock", "boatyard"}
+        or landuse == "reservoir"
+    ):
+        return "water"
+    if natural == "wood" or landuse == "forest":
+        return "forest"
+    if natural in {"scrub", "grassland", "heath", "wetland", "sand", "bare_rock"}:
+        return "green"
+    if leisure == "pitch":
+        return "pitch"
+    if leisure in {
+        "park",
+        "garden",
+        "nature_reserve",
+        "golf_course",
+        "sports_centre",
+        "playground",
+    }:
+        return "green"
+    if amenity == "parking":
+        return "parking"
+    if landuse in {"industrial", "railway"}:
+        return "industrial"
+    if landuse in {
+        "grass",
+        "meadow",
+        "village_green",
+        "orchard",
+        "allotments",
+        "farmland",
+        "recreation_ground",
+        "flowerbed",
+    }:
+        return "green"
+    if landuse == "cemetery" or amenity in {"school", "hospital", "university"}:
+        return "other"
+    return None
+
+
+def building_color(wid: int, seed: int = 0):
+    i = int(hashlib.md5(f"{wid}-{seed}".encode()).hexdigest()[:6], 16) % len(BUILDING_PALETTE)
+    return BUILDING_PALETTE[i]
+
+
+def _polys(geom):
+    if geom is None or geom.is_empty:
+        return []
+    if geom.geom_type == "Polygon":
+        return [geom]
+    if geom.geom_type == "MultiPolygon":
+        return list(geom.geoms)
+    if hasattr(geom, "geoms"):
+        out = []
+        for g in geom.geoms:
+            out.extend(_polys(g))
+        return out
+    return []
+
+
+class CityBuilder:
+    def __init__(
+        self,
+        ways,
+        proj,
+        dem,
+        size_m: float,
+        terrain_res: int = 256,
+        seed: int = 7,
+        roofs: bool = True,
+    ):
+        self.ways = ways
+        self.proj = proj
+        self.dem = dem
+        self.size = float(size_m)
+        self.res = int(terrain_res)
+        self.half = self.size / 2.0
+        self.step = self.size / self.res
+        self.box = box(-self.half, -self.half, self.half, self.half)
+        self.seed = seed
+        self.roofs = roofs
+        self.terrain_z = None
+        self.stats = {}
+
+    # ---------------------------------------------------------------- utilitare
+    def local(self, coords) -> np.ndarray:
+        arr = np.asarray(coords, dtype=np.float64)
+        x, y = self.proj.to_xy(arr[:, 0], arr[:, 1])
+        return np.column_stack([np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)])
+
+    def hz(self, x, y):
+        """Altitudinea terenului din grila generată (interpolare biliniară)."""
+        x = np.asarray(x, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        u = np.clip((x + self.half) / self.step, 0, self.res - 1e-4)
+        v = np.clip((y + self.half) / self.step, 0, self.res - 1e-4)
+        i0 = v.astype(np.int32)
+        j0 = u.astype(np.int32)
+        fv, fu = v - i0, u - j0
+        z = self.terrain_z
+        out = (
+            z[i0, j0] * (1 - fu) * (1 - fv)
+            + z[i0, j0 + 1] * fu * (1 - fv)
+            + z[i0 + 1, j0] * (1 - fu) * fv
+            + z[i0 + 1, j0 + 1] * fu * fv
+        )
+        return out
+
+    # ---------------------------------------------------------------- teren
+    def build_terrain(self):
+        n = self.res + 1
+        xs = -self.half + np.arange(n) * self.step
+        ys = -self.half + np.arange(n) * self.step
+        X, Y = np.meshgrid(xs, ys)  # X: est, Y: nord
+        lon, lat = self.proj.to_lonlat(X, Y)
+        Z = self.dem.heights(np.asarray(lon), np.asarray(lat))
+        self.terrain_z = Z.astype(np.float64)
+
+        # vârfuri (x=Est, y=Sus, z=Nord)
+        verts = np.column_stack([X.ravel(), Z.ravel(), Y.ravel()])
+
+        i, j = np.meshgrid(np.arange(self.res), np.arange(self.res), indexing="ij")
+        v00 = (i * n + j).ravel()
+        v10 = (i * n + j + 1).ravel()
+        v01 = ((i + 1) * n + j).ravel()
+        v11 = ((i + 1) * n + j + 1).ravel()
+        faces = np.vstack(
+            [
+                np.column_stack([v00, v10, v11]),
+                np.column_stack([v00, v11, v01]),
+            ]
+        )
+
+        # culoare: verde -> galben-verde pe altitudine, gri pe pantă mare
+        gy, gx = np.gradient(Z, self.step)
+        slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+        zmin, zmax = float(Z.min()), float(Z.max())
+        t = (Z - zmin) / max(1e-6, (zmax - zmin))
+        lo = np.array(C["terrain_low"], float)
+        hi = np.array(C["terrain_high"], float)
+        rock = np.array(C["rock"], float)
+        col = lo[None, :] * (1 - t.ravel()[:, None]) + hi[None, :] * t.ravel()[:, None]
+        w = np.clip((slope.ravel() - 18.0) / 20.0, 0, 1)[:, None]
+        col = col * (1 - w) + rock[None, :] * w
+        colors = np.clip(col, 0, 255).astype(np.uint8)
+
+        m = Mesh()
+        m.add(verts, faces, colors)
+        self.stats["terrain_elev_range"] = [round(zmin, 1), round(zmax, 1)]
+        return m
+
+    # ---------------------------------------------------------------- drumuri
+    def build_roads(self):
+        road_polys, walk_polys = [], []
+        road_pts, road_z, walk_pts, walk_z = [], [], [], []
+        network = []
+
+        for w in self.ways:
+            hw = w.tags.get("highway")
+            if not hw or hw in SKIP:
+                continue
+            if w.tags.get("tunnel") in ("yes", "building_passage"):
+                continue
+            xy = self.local(w.coords)
+            if len(xy) < 2:
+                continue
+            line = LineString(xy)
+            if not line.intersects(self.box):
+                continue
+            width = road_width(w.tags)
+            is_walk = hw in WALK_HIGHWAYS
+            r = resample(xy, 4.0)
+            if len(r) < 2:
+                continue
+            z = self.hz(r[:, 0], r[:, 1]) + (0.10 if is_walk else 0.16)
+            z = smooth_1d(z, 7)
+            try:
+                poly = LineString(r).buffer(
+                    width / 2.0, cap_style="flat", join_style="round", resolution=2
+                )
+            except Exception:
+                continue
+            if poly.is_empty:
+                continue
+            if is_walk:
+                walk_polys.append(poly)
+                walk_pts.append(r)
+                walk_z.append(z)
+            else:
+                road_polys.append(poly)
+                road_pts.append(r)
+                road_z.append(z)
+                network.append(
+                    {
+                        "id": w.id,
+                        "name": w.tags.get("name", ""),
+                        "class": hw,
+                        "width": round(width, 2),
+                        "lanes": w.tags.get("lanes", ""),
+                        "oneway": w.tags.get("oneway", "no"),
+                        "maxspeed": w.tags.get("maxspeed", ""),
+                        "surface": w.tags.get("surface", ""),
+                        "bridge": w.tags.get("bridge", "no"),
+                        "points": np.column_stack([r[:, 0], z, r[:, 1]]).round(2).tolist(),
+                    }
+                )
+
+        roads = self._buffers_to_mesh(road_polys, C["asphalt"])
+        walks = self._buffers_to_mesh(walk_polys, C["walk"])
+        self.stats["road_ways"] = len(network)
+        self.stats["walk_ways"] = sum(
+            1 for w in self.ways if w.tags.get("highway") in WALK_HIGHWAYS
+        )
+        return roads, walks, network
+
+    def _buffers_to_mesh(self, polys, color):
+        """Poligoane de carosabil/trotuar -> mesh drapat pe teren.
+
+        Altitudinea fiecărui vârf vine din **teren** (self.hz), nu din cel mai apropiat punct
+        de pe axa drumului — altfel, pe pante, asfaltul iese terasat în trepte și terenul
+        poate ieși prin el.
+
+        Contururile sunt densificate la ~8 m înainte de triangulare, ca poligoanele lungi și
+        înguste (benzile de drum) să aibă destule vârfuri ca să urmeze relieful.
+        """
+        if not polys:
+            return Mesh()
+        try:
+            merged = unary_union(polys)
+        except Exception:
+            merged = unary_union([p.buffer(0) for p in polys])
+
+        mesh = Mesh()
+        for part in _polys(merged):
+            for piece in _polys(part.intersection(self.box)):
+                if piece.area < 1.0:
+                    continue
+                piece = segmentize(piece, 8.0)
+                v2, f = triangulate_polygon(piece)
+                if not len(f):
+                    continue
+                z = self.hz(v2[:, 0], v2[:, 1]) + 0.16
+                v3 = np.column_stack([v2[:, 0], z, v2[:, 1]])
+                mesh.add(v3, f, color)
+        return mesh
+
+    # ---------------------------------------------------------------- clădiri
+    def build_buildings(self):
+        mesh = Mesh()
+        self._current_roof = Mesh()
+        count = 0
+        skipped = 0
+        roofed = 0
+
+        for w in self.ways:
+            if "building" not in w.tags and "building:part" not in w.tags:
+                continue
+            if w.tags.get("building") == "no":
+                continue
+            xy = self.local(w.coords)
+            if len(xy) < 3:
+                skipped += 1
+                continue
+            poly = Polygon(xy)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            parts = _polys(poly.intersection(self.box))
+            if not parts:
+                skipped += 1
+                continue
+
+            h = building_height(w.tags, w.id, self.seed)
+            wall = building_color(w.id, self.seed)
+            hsh = int(hashlib.md5(f"b{w.id}-{self.seed}".encode()).hexdigest()[:6], 16)
+            roof_rgb = ROOF_COLORS[hsh % len(ROOF_COLORS)]
+
+            for part in parts:
+                area = float(part.area)
+                if area < 8.0:
+                    continue
+                ring = np.asarray(part.exterior.coords)
+                base = float(np.min(self.hz(ring[:, 0], ring[:, 1]))) - 0.35
+                top = base + h
+
+                v, f, cap, uv = extrude(part, base, top, floor_h=FLOOR_H, module_u=MODULE_U)
+                if v is None:
+                    continue
+                wall_rgb = np.array(wall, dtype=np.float64)
+                cols = np.zeros((len(v), 4), dtype=np.uint8)
+                cols[:, :3] = wall_rgb.astype(np.uint8)
+                cols[:, 3] = 255
+                base_row = np.isclose(v[:, 1], base)
+                cols[base_row, :3] = np.clip(wall_rgb * 0.82, 0, 255).astype(
+                    np.uint8
+                )  # parter mai închis
+                cols[cap, :3] = np.array(roof_rgb, dtype=np.uint8)
+                cols[cap, 3] = 255
+                mesh.add(v, f, cols, uv)
+                count += 1
+
+                wall_t = tuple(int(c) for c in wall_rgb)
+                frame = self._mrr_frame(part)
+                fill = (area / (frame[3] * frame[4])) if frame else 0.0
+
+                # cât de mult din dreptunghiul streașinii stă chiar pe clădire
+                cover = 0.0
+                if frame:
+                    center, u, v_, L, D = frame
+                    o = 0.45
+                    quad = Polygon(
+                        [
+                            (
+                                center[0] + u[0] * (-L / 2 - o) + v_[0] * (-D / 2 - o),
+                                center[1] + u[1] * (-L / 2 - o) + v_[1] * (-D / 2 - o),
+                            ),
+                            (
+                                center[0] + u[0] * (L / 2 + o) + v_[0] * (-D / 2 - o),
+                                center[1] + u[1] * (L / 2 + o) + v_[1] * (-D / 2 - o),
+                            ),
+                            (
+                                center[0] + u[0] * (L / 2 + o) + v_[0] * (D / 2 + o),
+                                center[1] + u[1] * (L / 2 + o) + v_[1] * (D / 2 + o),
+                            ),
+                            (
+                                center[0] + u[0] * (-L / 2 - o) + v_[0] * (D / 2 + o),
+                                center[1] + u[1] * (-L / 2 - o) + v_[1] * (D / 2 + o),
+                            ),
+                        ]
+                    )
+                    try:
+                        cover = float(quad.intersection(part.buffer(0.4)).area) / max(
+                            quad.area, 1e-6
+                        )
+                    except Exception:
+                        cover = 0.0
+
+                # case mici/medii, aproximativ dreptunghiulare -> acoperiș în două ape
+                if (
+                    self.roofs
+                    and h < 12.0
+                    and 25.0 < area < 1500.0
+                    and frame
+                    and fill > 0.6
+                    and cover > 0.78
+                ):
+                    ridge = self._gable_roof(part, top, wall_t, roof_rgb)
+                    roofed += 1
+                    # horn
+                    if ridge and hsh % 3 == 0 and area < 500:
+                        center, u, v_, L, D = frame
+                        off = (hsh % 100 / 100.0 - 0.5) * L * 0.5
+                        cx = center[0] + u[0] * off
+                        cz = center[1] + u[1] * off
+                        self._box(
+                            cx, cz, 0.7, 0.7, top + ridge * 0.55, top + ridge + 1.0, (128, 96, 84)
+                        )
+                else:
+                    self._flat_roof(part, top, wall_t, roof_rgb, w.id, area)
+                    roofed += 1
+
+        self.stats["buildings"] = count
+        self.stats["buildings_skipped"] = skipped
+        self.stats["buildings_with_roof_detail"] = roofed
+        return mesh.merged(self._current_roof)
+
+    # ------------------------------------------------------------ acoperișuri
+    @staticmethod
+    def _mrr_frame(poly: Polygon):
+        """Cadru al dreptunghiului minim: (centru, axă_lungă, axă_scurtă, L, D)."""
+        try:
+            mrr = poly.minimum_rotated_rectangle
+            pts = np.asarray(mrr.exterior.coords)[:4]
+        except Exception:
+            return None
+        if len(pts) < 4:
+            return None
+        e1, e2 = pts[1] - pts[0], pts[2] - pts[1]
+        l1, l2 = float(np.linalg.norm(e1)), float(np.linalg.norm(e2))
+        if l1 < 1e-6 or l2 < 1e-6:
+            return None
+        if l1 < l2:  # u = axa lungă
+            e1, e2, l1, l2 = e2, e1, l2, l1
+        u = e1 / l1
+        v = np.array([-u[1], u[0]])
+        return pts.mean(axis=0), u, v, l1, l2
+
+    def _box(self, cx, cz, w, d, y0, y1, rgb):
+        """Cutie fără fund (horn, casetă tehnică, antenă) adăugată pe mesh-ul de acoperișuri."""
+        verts, faces = box_geom(cx, cz, w, d, y0, y1)
+        self._current_roof.add(verts, faces, rgb)
+
+    def _gable_roof(self, poly: Polygon, top: float, wall_rgb, roof_rgb):
+        """Acoperiș în două ape, cu streașină, orientat pe latura lungă."""
+        frame = self._mrr_frame(poly)
+        if frame is None:
+            return False
+        center, u, v, L, D = frame
+        overhang = 0.45
+        L2, D2 = L / 2.0 + overhang, D / 2.0 + overhang
+        ridge_h = float(np.clip(0.34 * D, 1.2, 4.8))
+
+        def P(a, b, z):
+            p = center + u * a + v * b
+            return [float(p[0]), float(z), float(p[1])]
+
+        A = P(-L2, -D2, top)
+        B = P(L2, -D2, top)
+        C = P(L2, D2, top)
+        Dd = P(-L2, D2, top)
+        R1 = P(-L2, 0, top + ridge_h)
+        R2 = P(L2, 0, top + ridge_h)
+
+        roof = np.array([A, B, R2, A, R2, R1, C, Dd, R1, C, R1, R2])
+        # winding inversat: altfel normalele streașinii ies în jos și acoperișul se umbrește greșit
+        roof_f = np.array([[0, 2, 1], [3, 5, 4], [6, 8, 7], [9, 11, 10]])
+        gables = np.array([A, R1, Dd, B, C, R2])
+        gable_f = np.array([[0, 2, 1], [3, 5, 4]])
+        self._mesh_roof(roof, roof_f, roof_rgb)
+        self._mesh_roof(gables, gable_f, wall_rgb)
+        return ridge_h
+
+    def _mesh_roof(self, verts, faces, rgb):
+        cols = np.full((len(verts), 4), 255, dtype=np.uint8)
+        cols[:, :3] = rgb
+        self._current_roof.add(np.asarray(verts), np.asarray(faces), cols)
+
+    def _flat_roof(self, poly: Polygon, top: float, wall_rgb, roof_rgb, wid: int, area: float):
+        """Acoperiș plat: atic (parapet) + casete tehnice / hornuri."""
+        hsh = int(hashlib.md5(f"roof{wid}-{self.seed}".encode()).hexdigest()[:6], 16)
+        # atic
+        try:
+            band = poly.buffer(0).difference(poly.buffer(-0.32, join_style="mitre"))
+            for part in _polys(band):
+                v, f, cap, uv = extrude(part, top - 0.05, top + 0.55)
+                if v is None:
+                    continue
+                cols = np.full((len(v), 4), 255, dtype=np.uint8)
+                cols[:, :3] = wall_rgb
+                cols[~cap, :3] = np.clip(np.array(wall_rgb, float) * 1.03, 0, 255).astype(np.uint8)
+                self._current_roof.add(v, f, cols, uv)
+        except Exception:
+            pass
+
+        # casete tehnice pe acoperiș
+        n_boxes = 1 if area < 400 else 2
+        rp = poly.representative_point()
+        for k in range(n_boxes):
+            ang = (hsh + k * 211) % 360 * math.pi / 180
+            rad = min(6.0, math.sqrt(area) * 0.22) * (((hsh >> (k * 3)) % 100) / 100.0)
+            cx = rp.x + math.cos(ang) * rad
+            cz = rp.y + math.sin(ang) * rad
+            if not poly.contains(Point(cx, cz)):
+                cx, cz = rp.x, rp.y
+            w = 2.0 + (hsh >> (k * 5)) % 30 / 10.0
+            d = 1.6 + (hsh >> (k * 7)) % 24 / 10.0
+            hgt = 1.2 + (hsh >> (k * 2)) % 16 / 10.0
+            self._box(cx, cz, w, d, top, top + hgt, DETAIL_COLORS[(hsh + k) % len(DETAIL_COLORS)])
+
+        # antenă pe clădirile înalte
+        if area > 250 and (hsh % 7 == 0):
+            self._box(rp.x, rp.y, 0.16, 0.16, top, top + 3.0, (90, 92, 96))
+
+    # ---------------------------------------------------------------- zone
+    def build_areas(self):
+        layers = defaultdict(Mesh)
+        counts = defaultdict(int)
+        for w in self.ways:
+            tags = w.tags
+            if "building" in tags or "highway" in tags:
+                continue
+            kind = area_kind(tags)
+            if kind is None:
+                continue
+            xy = self.local(w.coords)
+            if len(xy) < 3:
+                continue
+            poly = Polygon(xy)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            for part in _polys(poly.intersection(self.box)):
+                if part.area < 30.0:
+                    continue
+                v2, f = triangulate_polygon(part)
+                if not len(f):
+                    continue
+                if kind == "water":
+                    zs = self.hz(v2[:, 0], v2[:, 1])
+                    level = float(np.percentile(zs, 5)) - 0.35
+                    z = np.full(len(v2), level)
+                else:
+                    z = self.hz(v2[:, 0], v2[:, 1]) + 0.06
+                v3 = np.column_stack([v2[:, 0], z, v2[:, 1]])
+                layers[kind].add(v3, f, C[kind])
+                counts[kind] += 1
+        self.stats["areas"] = dict(counts)
+        return dict(layers)
