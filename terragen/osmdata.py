@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .multipolygon import assemble, rings_of
+
 try:  # pyosmium e nevoie doar pentru citirea fișierelor .osm.pbf
     import osmium
 except Exception:
@@ -51,7 +53,26 @@ SKIP_HIGHWAY = {
 class Way:
     id: int
     tags: dict
-    coords: list = field(default_factory=list)  # [(lon, lat), ...]
+    coords: list = field(default_factory=list)  # [(lon, lat), ...] — conturul exterior
+    # Pentru relații `type=multipolygon`: toate inelele (exterior + găuri), în ordinea
+    # [exterior, gaură1, gaură2, …]. Gol pentru way-urile obișnuite.
+    rings: list = field(default_factory=list)
+
+
+def ways_from_relation(rid: int, tags, members, wanted=None) -> list[Way]:
+    """Relație multipolygon → way-uri cu inele (unul per poligon rezultat).
+
+    `members` = `[(role, [(lon, lat), ...]), ...]` — geometria fiecărui membru way.
+    """
+    if wanted is not None and not wanted(tags):
+        return []
+    out = []
+    for poly in assemble(members):
+        rings = rings_of(poly)
+        if not rings or len(rings[0]) < 3:
+            continue
+        out.append(Way(id=rid, tags=dict(tags), coords=rings[0], rings=rings))
+    return out
 
 
 def _wanted(tags) -> bool:
@@ -108,6 +129,7 @@ def read_pbf(path: str, bbox, cache_dir: str | None = None) -> list[Way]:
             super().__init__()
             self.nodes: dict[int, tuple[float, float]] = {}
             self.ways: list[Way] = []
+            self.way_refs: dict[int, list[int]] = {}
 
         def node(self, nd):
             try:
@@ -119,6 +141,8 @@ def read_pbf(path: str, bbox, cache_dir: str | None = None) -> list[Way]:
 
         def way(self, way):
             tags = dict(way.tags)
+            refs = [nd.ref for nd in way.nodes]
+            self.way_refs[way.id] = refs  # pentru relațiile multipolygon
             if not _wanted(tags):
                 return
             runs, cur = [], []
@@ -134,6 +158,23 @@ def read_pbf(path: str, bbox, cache_dir: str | None = None) -> list[Way]:
                 runs.append(cur)
             for r in runs:
                 self.ways.append(Way(id=way.id, tags=tags, coords=r))
+
+        def relation(self, rel):
+            tags = dict(rel.tags)
+            if tags.get("type") != "multipolygon" or not _wanted(tags):
+                return
+            members = []
+            for m in rel.members:
+                if m.type != "w":
+                    continue
+                coords = self._member_coords(m.ref)
+                if len(coords) >= 2:
+                    members.append((m.role, coords))
+            self.ways.extend(ways_from_relation(rel.id, tags, members))
+
+        def _member_coords(self, wid):
+            coords = [self.nodes[r] for r in self.way_refs.get(wid, ()) if r in self.nodes]
+            return coords
 
     h = _Collector()
     h.apply_file(path, locations=False)
@@ -272,6 +313,7 @@ def _parse_geojson_seq(text: str) -> list[Way]:
         gt, c = geom.get("type"), geom.get("coordinates")
         if not c:
             continue
+        rings = None
         try:
             if gt == "LineString":
                 if len(c) >= 4 and c[0] == c[-1]:
@@ -280,14 +322,21 @@ def _parse_geojson_seq(text: str) -> list[Way]:
                         continue  # way închis deja exportat ca Polygon
                 coords = c
             elif gt == "Polygon":
-                coords = c[0]
+                rings = c
             elif gt == "MultiLineString":
                 coords = max(c, key=len)
             elif gt == "MultiPolygon":
-                coords = max((poly[0] for poly in c), key=len)
+                # osmium export polygonizează deja relațiile → păstrăm cel mai mare
+                # poligon împreună cu găurile lui
+                rings = max(c, key=lambda poly: len(poly[0]))
             else:
                 continue
-            coords = [(float(p[0]), float(p[1])) for p in coords]
+            if rings is None:
+                coords = [(float(p[0]), float(p[1])) for p in coords]
+            else:
+                rings = [[(float(p[0]), float(p[1])) for p in ring] for ring in rings]
+                rings = [r for r in rings if len(r) >= 3]
+                coords = rings[0] if rings else []
         except Exception:
             continue
         if len(coords) >= 2:
@@ -295,7 +344,8 @@ def _parse_geojson_seq(text: str) -> list[Way]:
                 wid = int(raw.get("@id", 0) or 0)
             except Exception:
                 wid = 0
-            out.append(Way(id=wid, tags=props, coords=coords))
+            holes = rings[1:] if rings and len(rings) > 1 else []
+            out.append(Way(id=wid, tags=props, coords=coords, rings=rings if holes else []))
     return out
 
 
@@ -320,7 +370,9 @@ def read_pbflite(path: str, bbox, cache_dir: str | None = None, progress=None) -
                 pass
 
     raw = read_ways(path, bbox, _wanted, progress=progress)
-    ways = [Way(id=w["id"], tags=w["tags"], coords=w["coords"]) for w in raw]
+    ways = [
+        Way(id=w["id"], tags=w["tags"], coords=w["coords"], rings=w.get("rings") or []) for w in raw
+    ]
     if cache:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(pickle.dumps(ways, protocol=4))
@@ -363,8 +415,15 @@ def fetch_overpass(bbox, timeout: int = 180, endpoint: str | None = None) -> lis
   way["leisure"~"^(park|garden|pitch|playground|nature_reserve|golf_course|sports_centre)$"]({s},{w},{n},{e});
   way["waterway"~"^(riverbank|dock|boatyard)$"]({s},{w},{n},{e});
   way["amenity"~"^(parking|school|hospital|university)$"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["building"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["building:part"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["natural"~"^(water|wood|scrub|grassland|heath|wetland|bare_rock|sand)$"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["landuse"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["leisure"~"^(park|garden|pitch|playground|nature_reserve|golf_course|sports_centre)$"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["waterway"~"^(riverbank|dock|boatyard)$"]({s},{w},{n},{e});
+  rel["type"="multipolygon"]["amenity"~"^(parking|school|hospital|university)$"]({s},{w},{n},{e});
 );
-out tags geom;"""
+out body geom;"""
     endpoints = (
         [endpoint]
         if endpoint
@@ -389,13 +448,24 @@ out tags geom;"""
                 data = r.json()
                 out = []
                 for el in data.get("elements", []):
+                    tags = el.get("tags", {}) or {}
+                    if el.get("type") == "relation":
+                        members = []
+                        for m in el.get("members", []):
+                            geom = m.get("geometry") or []
+                            if len(geom) >= 2:
+                                members.append(
+                                    (m.get("role") or "outer", [(q["lon"], q["lat"]) for q in geom])
+                                )
+                        out.extend(ways_from_relation(el["id"], tags, members))
+                        continue
                     geom = el.get("geometry") or []
                     if len(geom) < 2:
                         continue
                     out.append(
                         Way(
                             id=el["id"],
-                            tags=el.get("tags", {}),
+                            tags=tags,
                             coords=[(p["lon"], p["lat"]) for p in geom],
                         )
                     )

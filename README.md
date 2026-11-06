@@ -130,6 +130,7 @@ terragen/
 ├── dem.py        # tile-uri Terrarium → mozaic de altitudini + eșantionare biliniară
 ├── osmdata.py    # citire .osm.pbf (pyosmium / osmium-tool / cititor intern) sau Overpass
 ├── pbflite.py    # cititor .osm.pbf în Python pur (fără dependențe)
+├── multipolygon.py # relații OSM `type=multipolygon` → poligoane cu găuri (curți, lacuri)
 ├── geom.py       # triangulare (earcut, cu găuri), extrudare cu pereți plați, UV de fațadă
 ├── facade.py     # textura de fereastră generată procedural (PNG, o celulă)
 ├── build.py      # stilul: lățimi de drum, înălțimi, culori, acoperișuri, straturi
@@ -161,8 +162,9 @@ pytest -q
 
 ## Limitări (cinstit)
 
-- **Relații multipolygon** OSM sunt ignorate → unele clădiri mari (mall-uri, biserici cu curți) și
-  unele păduri/parcuri definite ca `relation` lipsesc.
+- **Relații multipolygon**: citite din toate cele trei surse (Overpass, pyosmium, cititorul intern),
+  dar inelele tăiate de marginea bbox-ului sunt ignorate (nu se „închid" forțat) → obiecte foarte mari,
+  la marginea zonei, pot lipsi.
 - **Tuneluri** sărite; **poduri** puse pe teren (pot coborî în albia apei). `bridge=yes` e în JSON.
 - **DEM public ~3–5 m/px** — relief corect la scară de oraș, fără taluzuri fine, diguri, rampe.
 - **Ferestrele sunt textură**, nu geometrie: fără balcoane, jaluzele sau goluri reale în perete.

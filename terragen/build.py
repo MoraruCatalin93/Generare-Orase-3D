@@ -195,6 +195,29 @@ class CityBuilder:
         x, y = self.proj.to_xy(arr[:, 0], arr[:, 1])
         return np.column_stack([np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)])
 
+    def shape(self, w) -> Polygon | None:
+        """Way/relație → poligon în coordonate locale, cu găuri dacă are (multipolygon)."""
+        rings = w.rings if getattr(w, "rings", None) else [w.coords]
+        ext = self.local(rings[0])
+        if len(ext) < 3:
+            return None
+        holes = []
+        for r in rings[1:]:
+            if len(r) < 3:
+                continue
+            h = self.local(r)
+            if len(h) >= 3:
+                holes.append(h)
+        try:
+            poly = Polygon(ext, holes)
+        except Exception:
+            return None
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if poly.is_empty:
+            return None
+        return poly
+
     def hz(self, x, y):
         """Altitudinea terenului din grila generată (interpolare biliniară)."""
         x = np.asarray(x, dtype=np.float64)
@@ -358,19 +381,19 @@ class CityBuilder:
         count = 0
         skipped = 0
         roofed = 0
+        counts_mp = 0
 
         for w in self.ways:
             if "building" not in w.tags and "building:part" not in w.tags:
                 continue
             if w.tags.get("building") == "no":
                 continue
-            xy = self.local(w.coords)
-            if len(xy) < 3:
+            poly = self.shape(w)
+            if poly is None:
                 skipped += 1
                 continue
-            poly = Polygon(xy)
-            if not poly.is_valid:
-                poly = poly.buffer(0)
+            if getattr(w, "rings", None):
+                counts_mp += 1
             parts = _polys(poly.intersection(self.box))
             if not parts:
                 skipped += 1
@@ -468,6 +491,7 @@ class CityBuilder:
         self.stats["buildings"] = count
         self.stats["buildings_skipped"] = skipped
         self.stats["buildings_with_roof_detail"] = roofed
+        self.stats["buildings_from_relations"] = counts_mp
         return mesh.merged(self._current_roof)
 
     # ------------------------------------------------------------ acoperișuri
@@ -571,6 +595,7 @@ class CityBuilder:
     def build_areas(self):
         layers = defaultdict(Mesh)
         counts = defaultdict(int)
+        counts_mp = 0
         for w in self.ways:
             tags = w.tags
             if "building" in tags or "highway" in tags:
@@ -578,12 +603,11 @@ class CityBuilder:
             kind = area_kind(tags)
             if kind is None:
                 continue
-            xy = self.local(w.coords)
-            if len(xy) < 3:
+            poly = self.shape(w)
+            if poly is None:
                 continue
-            poly = Polygon(xy)
-            if not poly.is_valid:
-                poly = poly.buffer(0)
+            if getattr(w, "rings", None):
+                counts_mp += 1
             for part in _polys(poly.intersection(self.box)):
                 if part.area < 30.0:
                     continue
@@ -600,4 +624,5 @@ class CityBuilder:
                 layers[kind].add(v3, f, C[kind])
                 counts[kind] += 1
         self.stats["areas"] = dict(counts)
+        self.stats["areas_from_relations"] = counts_mp
         return dict(layers)

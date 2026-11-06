@@ -4,6 +4,29 @@ Toate schimbările notabile ale proiectului. Formatul urmează
 [Keep a Changelog](https://keepachangelog.com/ro/1.1.0/), versiunile
 [SemVer](https://semver.org/lang/ro/).
 
+## [2.1.0] — 2026-11-06
+
+### Adăugat
+- **Relații OSM `type=multipolygon`** — clădiri cu curte interioară (mall-uri, mănăstiri, muzee),
+  parcuri/păduri cu lacuri și orice zonă definită ca `relation` ajung acum în oraș, cu **găuri reale**:
+  zidurile apar și pe conturul interior, iar suprafața verde/apă nu acoperă golul.
+  - modul nou `terragen/multipolygon.py`: închide inelele sparte în mai multe way-uri, atribuie
+    găurile conturului care le conține, ignoră inelele rupte (extract tăiat la bbox);
+  - citite din **toate** sursele: Overpass (`rel[...] ... out body geom`), pyosmium (handler `relation`),
+    osmium-tool (`osmium export` păstrează acum găurile) și cititorul intern PBF (câmpul 4 = Relation);
+  - `Way` are acum `rings` (exterior + găuri); `CityBuilder.shape()` construiește poligonul cu găuri
+    pentru clădiri **și** pentru straturile de zone;
+  - statistici noi în `manifest.json`: `buildings_from_relations`, `areas_from_relations`.
+
+### Reparat
+- `terragen --version` raporta versiunea hardcodată; acum ia `__version__` dintr-un singur loc.
+- Overpass: interogarea cerută include relațiile, iar răspunsul e cerut cu `out body geom` (fără
+  `body`, Overpass nu trimite membrii relației).
+
+### Teste
+- 33 de teste (de la 24): asamblare inele (spart/găuri/rupt), un `.osm.pbf` **sintetic** construit
+  octet cu octet în test pentru relații, plus construcție reală (biserică cu curte, parc cu lac).
+
 ## [2.0.0] — 2026-11-06
 
 Rescriere ca pipeline web: **fără Unity, fără Blender**. Rezultatul se vede direct în browser.

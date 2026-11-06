@@ -8,7 +8,8 @@ Format (OSM PBF):
   [uint32 BE lungime BlobHeader][BlobHeader][Blob] … repetat
   BlobHeader: 1=type, 3=datasize ; Blob: 1=raw, 2=raw_size, 3=zlib_data
   PrimitiveBlock: 1=stringtable, 2=groups, 17=granularity, 19=lat_offset, 20=lon_offset
-  PrimitiveGroup: 1=nodes, 2=dense, 3=ways
+  PrimitiveGroup: 1=nodes, 2=dense, 3=ways, 4=relations
+  Relation: 1=id, 2=keys, 3=vals, 8=roles_sid, 9=memids (delta), 10=types
 """
 
 from __future__ import annotations
@@ -122,6 +123,9 @@ def read_ways(path: str, bbox, wanted, progress=None):
     s, w, n, e = bbox
     nodes: dict[int, tuple[float, float]] = {}
     out: list[dict] = []
+    # toate way-urile (și cele fără tag-uri dorite) → refs, pentru inelele de relație
+    way_refs: dict[int, list[int]] = {}
+    relations: list[dict] = []
 
     def handle_group(gdata: bytes, strings: list[str]):
         for fn, _wt, v in _fields(gdata):
@@ -131,6 +135,8 @@ def read_ways(path: str, bbox, wanted, progress=None):
                 _node(v)
             elif fn == 3:  # Way
                 _way(v)
+            elif fn == 4:  # Relation (multipolygon)
+                _relation(v)
 
     def _coord(raw: int, offset: int, gran: int) -> float:
         return NANODEG * (offset + gran * raw)
@@ -193,8 +199,17 @@ def read_ways(path: str, bbox, wanted, progress=None):
                 vals = _packed(v)
             elif fn == 8:
                 refs_raw = v
-        if not keys:
+        if not keys and not refs_raw:
             return
+        # reținem refs-urile chiar dacă way-ul nu ne interesează direct:
+        # poate fi membru `outer`/`inner` al unei relații multipolygon
+        if wid not in way_refs:
+            ids, prev_id, pos = [], 0, 0
+            while pos < len(refs_raw):
+                raw, pos = _varint(refs_raw, pos)
+                prev_id += _signed(raw)
+                ids.append(prev_id)
+            way_refs[wid] = ids
         tags = {}
         for k, val in zip(keys, vals):
             if k < len(strings) and val < len(strings):
@@ -221,6 +236,49 @@ def read_ways(path: str, bbox, wanted, progress=None):
         for r in runs:
             out.append({"id": wid, "tags": tags, "coords": r})
 
+    def _relation(buf: bytes):
+        """Relation: 1=id, 2=keys, 3=vals, 8=roles_sid, 9=memids, 10=types."""
+        rid = 0
+        keys: list[int] = []
+        vals: list[int] = []
+        roles: list[int] = []
+        memids: list[int] = []
+        types: list[int] = []
+        for fn, _wt, v in _fields(buf):
+            if fn == 1:
+                rid = v
+            elif fn == 2:
+                keys = _packed(v)
+            elif fn == 3:
+                vals = _packed(v)
+            elif fn == 8:
+                roles = _packed(v)
+            elif fn == 9:
+                memids = _packed(v)
+            elif fn == 10:
+                types = _packed(v)
+        if not keys or not memids:
+            return
+        tags = {}
+        for k, val in zip(keys, vals):
+            if k < len(strings) and val < len(strings):
+                tags[strings[k]] = strings[val]
+        if tags.get("type") != "multipolygon":
+            return
+        if wanted is not None and not wanted(tags):
+            return
+        members = []
+        ref = 0
+        for i, raw in enumerate(memids):
+            ref += _signed(raw)
+            mtype = types[i] if i < len(types) else 1  # 0=node, 1=way, 2=relation
+            if mtype != 1:
+                continue
+            role_id = roles[i] if i < len(roles) else -1
+            role = strings[role_id] if 0 <= role_id < len(strings) else "outer"
+            members.append([role, ref])
+        relations.append({"id": rid, "tags": tags, "members": members})
+
     gran_ref = [100]
     lat_off_ref = [0]
     lon_off_ref = [0]
@@ -246,4 +304,27 @@ def read_ways(path: str, bbox, wanted, progress=None):
                 lon_off_ref[0] = _signed(v)
         for g in groups:
             handle_group(g, strings)
+
+    if relations:
+        from .multipolygon import assemble, rings_of
+
+        for rel in relations:
+            members = []
+            for role, wid in rel["members"]:
+                coords = [nodes[r] for r in way_refs.get(wid, ()) if r in nodes]
+                if len(coords) >= 2:
+                    members.append((role, coords))
+            for poly in assemble(members):
+                rings = rings_of(poly)
+                if not rings or len(rings[0]) < 3:
+                    continue
+                out.append(
+                    {
+                        "id": rel["id"],
+                        "tags": rel["tags"],
+                        "coords": rings[0],
+                        "rings": rings,
+                        "relation": True,
+                    }
+                )
     return out

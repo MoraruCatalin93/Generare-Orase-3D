@@ -6,6 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import __version__
+
 
 def _cmd_serve(a) -> None:
     from . import server
@@ -64,7 +66,6 @@ def _cmd_check(a) -> None:
     import shutil
 
     cmd = Path(__file__).resolve().parent
-    from . import __version__
 
     print(f"\nterragen {__version__} · Python {platform.python_version()} · {platform.system()}")
     print(f"pachet: {cmd}\n")
@@ -109,7 +110,7 @@ def main(argv=None) -> None:
         prog="terragen",
         description="Orașe 3D din date reale (OpenStreetMap + DEM) — fără Unity, fără Blender.",
     )
-    ap.add_argument("--version", action="version", version="terragen 2.0.0")
+    ap.add_argument("--version", action="version", version=f"terragen {__version__}")
     sub = ap.add_subparsers(dest="cmd")
 
     s = sub.add_parser("serve", help="pornește aplicația locală (hartă + generator + viewer)")
