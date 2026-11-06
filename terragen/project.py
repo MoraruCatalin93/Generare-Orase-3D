@@ -36,3 +36,21 @@ class LocalProjection:
         dlat = half / 111_320.0
         dlon = half / (111_320.0 * math.cos(math.radians(self.lat0)))
         return (self.lat0 - dlat, self.lon0 - dlon, self.lat0 + dlat, self.lon0 + dlon)
+
+
+# Re-export project management classes for convenience
+from .projects.model import Project  # noqa: E402
+from .projects.manager import ProjectManager  # noqa: E402
+from .projects.validation import (  # noqa: E402
+    CorruptedProjectError,
+    ProjectValidationError,
+)
+
+__all__ = [
+    "LocalProjection",
+    "Project",
+    "ProjectManager",
+    "ProjectValidationError",
+    "CorruptedProjectError",
+]
+

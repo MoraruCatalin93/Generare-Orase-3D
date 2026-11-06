@@ -32,7 +32,13 @@ def _srgb_to_linear(c: np.ndarray) -> np.ndarray:
     return out
 
 
-def write_glb(mesh, path: Path, name: str | None = None, texture_png: bytes | None = None) -> int:
+def write_glb(
+    mesh,
+    path: Path,
+    name: str | None = None,
+    texture_png: bytes | None = None,
+    material_name: str | None = None,
+) -> int:
     """Scriitor GLB minimal: POSITION, NORMAL, COLOR_0, TEXCOORD_0 (+ textură opțională).
 
     Axe glTF: X = Est, Y = Sus, Z = -Nord (right-handed).
@@ -90,7 +96,7 @@ def write_glb(mesh, path: Path, name: str | None = None, texture_png: bytes | No
         offset += len(data)
 
     material = {
-        "name": (name or path.stem) + "_mat",
+        "name": material_name or ((name or path.stem) + "_mat"),
         "pbrMetallicRoughness": {
             "baseColorFactor": [1, 1, 1, 1],
             "metallicFactor": 0.0,
@@ -143,6 +149,7 @@ OBJ_COLORS = {
     "roads": (56, 60, 66),
     "sidewalks": (150, 150, 143),
     "buildings": (205, 190, 168),
+    "vegetation": (64, 142, 58),
     "terrain": (124, 158, 92),
     "green": (110, 158, 86),
     "forest": (72, 114, 66),

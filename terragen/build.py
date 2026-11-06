@@ -175,6 +175,7 @@ class CityBuilder:
         terrain_res: int = 256,
         seed: int = 7,
         roofs: bool = True,
+        style_preset: Any = None,
     ):
         self.ways = ways
         self.proj = proj
@@ -186,8 +187,20 @@ class CityBuilder:
         self.box = box(-self.half, -self.half, self.half, self.half)
         self.seed = seed
         self.roofs = roofs
+
+        # Style preset initialization
+        if style_preset is not None:
+            from .styles import StylePreset, get_style_preset
+            self.style_preset = style_preset if isinstance(style_preset, StylePreset) else get_style_preset(style_preset)
+        else:
+            self.style_preset = None
+
         self.terrain_z = None
         self.stats = {}
+        self._road_polys: list[Polygon] = []
+        self._building_polys: list[Polygon] = []
+        self._water_polys: list[Polygon] = []
+        self._forest_polys: list[Polygon] = []
 
     # ---------------------------------------------------------------- utilitare
     def local(self, coords) -> np.ndarray:
@@ -266,12 +279,27 @@ class CityBuilder:
         slope = np.degrees(np.arctan(np.hypot(gx, gy)))
         zmin, zmax = float(Z.min()), float(Z.max())
         t = (Z - zmin) / max(1e-6, (zmax - zmin))
-        lo = np.array(C["terrain_low"], float)
-        hi = np.array(C["terrain_high"], float)
-        rock = np.array(C["rock"], float)
+
+        if self.style_preset:
+            lo = np.array(self.style_preset.terrain.low_color, float)
+            hi = np.array(self.style_preset.terrain.high_color, float)
+            rock = np.array(self.style_preset.terrain.rock_color, float)
+            slope_thresh = self.style_preset.terrain.slope_threshold_deg
+        else:
+            lo = np.array(C["terrain_low"], float)
+            hi = np.array(C["terrain_high"], float)
+            rock = np.array(C["rock"], float)
+            slope_thresh = 18.0
+
         col = lo[None, :] * (1 - t.ravel()[:, None]) + hi[None, :] * t.ravel()[:, None]
-        w = np.clip((slope.ravel() - 18.0) / 20.0, 0, 1)[:, None]
+        w = np.clip((slope.ravel() - slope_thresh) / 20.0, 0, 1)[:, None]
         col = col * (1 - w) + rock[None, :] * w
+
+        if self.style_preset and self.style_preset.terrain.peak_color and zmax > zmin + 30.0:
+            snow = np.array(self.style_preset.terrain.peak_color, float)
+            w_snow = np.clip((Z.ravel() - (zmin + (zmax - zmin) * 0.72)) / max(1.0, (zmax - zmin) * 0.28), 0, 1)[:, None]
+            col = col * (1 - w_snow) + snow[None, :] * w_snow
+
         colors = np.clip(col, 0, 255).astype(np.uint8)
 
         m = Mesh()
@@ -298,6 +326,8 @@ class CityBuilder:
             if not line.intersects(self.box):
                 continue
             width = road_width(w.tags)
+            if self.style_preset:
+                width *= self.style_preset.roads.width_scale
             is_walk = hw in WALK_HIGHWAYS
             r = resample(xy, 4.0)
             if len(r) < 2:
@@ -306,7 +336,7 @@ class CityBuilder:
             z = smooth_1d(z, 7)
             try:
                 poly = LineString(r).buffer(
-                    width / 2.0, cap_style="flat", join_style="round", resolution=2
+                    width / 2.0, cap_style="flat", join_style="round", quad_segs=2
                 )
             except Exception:
                 continue
@@ -335,8 +365,11 @@ class CityBuilder:
                     }
                 )
 
-        roads = self._buffers_to_mesh(road_polys, C["asphalt"])
-        walks = self._buffers_to_mesh(walk_polys, C["walk"])
+        self._road_polys = list(road_polys) + list(walk_polys)
+        asphalt_c = self.style_preset.roads.asphalt_color if self.style_preset else C["asphalt"]
+        walk_c = self.style_preset.roads.sidewalk_color if self.style_preset else C["walk"]
+        roads = self._buffers_to_mesh(road_polys, asphalt_c)
+        walks = self._buffers_to_mesh(walk_polys, walk_c)
         self.stats["road_ways"] = len(network)
         self.stats["walk_ways"] = sum(
             1 for w in self.ways if w.tags.get("highway") in WALK_HIGHWAYS
@@ -392,6 +425,11 @@ class CityBuilder:
             if poly is None:
                 skipped += 1
                 continue
+            if self.style_preset and self.style_preset.building.simplification_tol > 0:
+                try:
+                    poly = poly.simplify(self.style_preset.building.simplification_tol, preserve_topology=True)
+                except Exception:
+                    pass
             if getattr(w, "rings", None):
                 counts_mp += 1
             parts = _polys(poly.intersection(self.box))
@@ -400,14 +438,38 @@ class CityBuilder:
                 continue
 
             h = building_height(w.tags, w.id, self.seed)
-            wall = building_color(w.id, self.seed)
+            if self.style_preset:
+                h = h * self.style_preset.building.height_scale
+                if self.style_preset.building.height_variation > 0:
+                    rnd_h = (
+                        (int(hashlib.md5(f"hvar{w.id}-{self.seed}".encode()).hexdigest()[:6], 16) % 1000) / 1000.0 - 0.5
+                    ) * 2.0
+                    h = max(2.6, h * (1.0 + rnd_h * self.style_preset.building.height_variation))
+
             hsh = int(hashlib.md5(f"b{w.id}-{self.seed}".encode()).hexdigest()[:6], 16)
-            roof_rgb = ROOF_COLORS[hsh % len(ROOF_COLORS)]
+            if self.style_preset and self.style_preset.building.facade_palette:
+                wall = self.style_preset.building.facade_palette[hsh % len(self.style_preset.building.facade_palette)]
+            else:
+                wall = building_color(w.id, self.seed)
+
+            if self.style_preset and self.style_preset.building.roof_palette:
+                roof_rgb = self.style_preset.building.roof_palette[hsh % len(self.style_preset.building.roof_palette)]
+            else:
+                roof_rgb = ROOF_COLORS[hsh % len(ROOF_COLORS)]
+
+            min_area = self.style_preset.building.min_area if self.style_preset else 8.0
+            roof_styles = self.style_preset.building.roof_styles if self.style_preset else ["gable", "flat"]
+            can_gable = "gable" in roof_styles
+            can_flat = "flat" in roof_styles
+            overhang = self.style_preset.building.roof_overhang if self.style_preset else 0.45
+            ridge_scale = self.style_preset.building.roof_ridge_scale if self.style_preset else 1.0
+            add_chimneys = self.style_preset.building.add_chimneys if self.style_preset else True
 
             for part in parts:
                 area = float(part.area)
-                if area < 8.0:
+                if area < min_area:
                     continue
+                self._building_polys.append(part)
                 ring = np.asarray(part.exterior.coords)
                 base = float(np.min(self.hz(ring[:, 0], ring[:, 1]))) - 0.35
                 top = base + h
@@ -420,7 +482,8 @@ class CityBuilder:
                 cols[:, :3] = wall_rgb.astype(np.uint8)
                 cols[:, 3] = 255
                 base_row = np.isclose(v[:, 1], base)
-                cols[base_row, :3] = np.clip(wall_rgb * 0.82, 0, 255).astype(
+                darkening = self.style_preset.building.ground_floor_darkening if self.style_preset else 0.82
+                cols[base_row, :3] = np.clip(wall_rgb * darkening, 0, 255).astype(
                     np.uint8
                 )  # parter mai închis
                 cols[cap, :3] = np.array(roof_rgb, dtype=np.uint8)
@@ -436,7 +499,7 @@ class CityBuilder:
                 cover = 0.0
                 if frame:
                     center, u, v_, L, D = frame
-                    o = 0.45
+                    o = overhang
                     quad = Polygon(
                         [
                             (
@@ -467,16 +530,17 @@ class CityBuilder:
                 # case mici/medii, aproximativ dreptunghiulare -> acoperiș în două ape
                 if (
                     self.roofs
-                    and h < 12.0
+                    and can_gable
+                    and h < 14.0
                     and 25.0 < area < 1500.0
                     and frame
-                    and fill > 0.6
-                    and cover > 0.78
+                    and fill > 0.55
+                    and cover > 0.70
                 ):
-                    ridge = self._gable_roof(part, top, wall_t, roof_rgb)
+                    ridge = self._gable_roof(part, top, wall_t, roof_rgb, overhang=overhang, ridge_scale=ridge_scale)
                     roofed += 1
                     # horn
-                    if ridge and hsh % 3 == 0 and area < 500:
+                    if ridge and add_chimneys and hsh % 3 == 0 and area < 500:
                         center, u, v_, L, D = frame
                         off = (hsh % 100 / 100.0 - 0.5) * L * 0.5
                         cx = center[0] + u[0] * off
@@ -484,7 +548,7 @@ class CityBuilder:
                         self._box(
                             cx, cz, 0.7, 0.7, top + ridge * 0.55, top + ridge + 1.0, (128, 96, 84)
                         )
-                else:
+                elif self.roofs and can_flat:
                     self._flat_roof(part, top, wall_t, roof_rgb, w.id, area)
                     roofed += 1
 
@@ -520,15 +584,22 @@ class CityBuilder:
         verts, faces = box_geom(cx, cz, w, d, y0, y1)
         self._current_roof.add(verts, faces, rgb)
 
-    def _gable_roof(self, poly: Polygon, top: float, wall_rgb, roof_rgb):
+    def _gable_roof(
+        self,
+        poly: Polygon,
+        top: float,
+        wall_rgb,
+        roof_rgb,
+        overhang: float = 0.45,
+        ridge_scale: float = 1.0,
+    ):
         """Acoperiș în două ape, cu streașină, orientat pe latura lungă."""
         frame = self._mrr_frame(poly)
         if frame is None:
             return False
         center, u, v, L, D = frame
-        overhang = 0.45
         L2, D2 = L / 2.0 + overhang, D / 2.0 + overhang
-        ridge_h = float(np.clip(0.34 * D, 1.2, 4.8))
+        ridge_h = float(np.clip(0.34 * D * ridge_scale, 1.2, 5.5))
 
         def P(a, b, z):
             p = center + u * a + v * b
@@ -596,6 +667,8 @@ class CityBuilder:
         layers = defaultdict(Mesh)
         counts = defaultdict(int)
         counts_mp = 0
+        self._water_polys = []
+        self._forest_polys = []
         for w in self.ways:
             tags = w.tags
             if "building" in tags or "highway" in tags:
@@ -615,14 +688,45 @@ class CityBuilder:
                 if not len(f):
                     continue
                 if kind == "water":
+                    self._water_polys.append(part)
                     zs = self.hz(v2[:, 0], v2[:, 1])
-                    level = float(np.percentile(zs, 5)) - 0.35
+                    offset = self.style_preset.water.surface_offset_m if self.style_preset else -0.35
+                    level = float(np.percentile(zs, 5)) + offset
                     z = np.full(len(v2), level)
+                    water_col = self.style_preset.water.color if self.style_preset else C["water"]
+                    v3 = np.column_stack([v2[:, 0], z, v2[:, 1]])
+                    layers[kind].add(v3, f, water_col)
                 else:
+                    if kind == "forest":
+                        self._forest_polys.append(part)
                     z = self.hz(v2[:, 0], v2[:, 1]) + 0.06
-                v3 = np.column_stack([v2[:, 0], z, v2[:, 1]])
-                layers[kind].add(v3, f, C[kind])
+                    v3 = np.column_stack([v2[:, 0], z, v2[:, 1]])
+                    layers[kind].add(v3, f, C[kind])
                 counts[kind] += 1
         self.stats["areas"] = dict(counts)
         self.stats["areas_from_relations"] = counts_mp
         return dict(layers)
+
+    # ---------------------------------------------------------------- vegetație
+    def build_vegetation(self) -> Mesh:
+        """Generează vegetație procedurală (arbori low-poly conifere / foioase) conform stilului."""
+        if (
+            not self.style_preset
+            or not getattr(self.style_preset, "vegetation", None)
+            or not self.style_preset.vegetation.enabled
+        ):
+            return Mesh()
+        from .styles import generate_vegetation_layer
+
+        bbox_m = (-self.half, -self.half, self.half, self.half)
+        return generate_vegetation_layer(
+            bbox_m=bbox_m,
+            dem=self.dem,
+            proj=self.proj,
+            style=self.style_preset.vegetation,
+            seed=self.seed,
+            forest_polygons=getattr(self, "_forest_polys", None),
+            water_polygons=getattr(self, "_water_polys", None),
+            road_polygons=getattr(self, "_road_polys", None),
+            building_polygons=getattr(self, "_building_polys", None),
+        )

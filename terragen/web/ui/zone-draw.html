@@ -1,26 +1,231 @@
 <!DOCTYPE html>
-<html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Desenează zone · terragen</title><link rel="stylesheet" href="/vendor/maplibre-gl.css">
-<style>
-*{box-sizing:border-box}body{margin:0;background:#10161e;color:#e7edf3;font:14px system-ui,sans-serif}
-#map{position:absolute;inset:0 330px 0 0}aside{position:absolute;right:0;top:0;bottom:0;width:330px;overflow:auto;padding:20px;background:#121b25}
-h1{font-size:19px;margin:4px 0 8px}p,.hint{font-size:12px;line-height:1.5;color:#aab7c4}button,a.btn,input{font:inherit}
-button,a.btn{display:inline-block;border:1px solid #3e596c;border-radius:8px;background:#203346;color:#edf6fc;padding:9px;cursor:pointer;text-decoration:none}
-button:hover,a.btn:hover{border-color:#46c9a4}button:disabled{opacity:.5;cursor:default}.actions{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}
-input[type=text]{width:100%;padding:9px;background:#192633;color:white;border:1px solid #3b4a59;border-radius:7px}
-.zone{background:#192633;border:1px solid #314351;border-radius:8px;padding:8px;margin:8px 0}.zone strong{overflow-wrap:anywhere}
-.zone .actions{margin:7px 0 0}.zone button{font-size:12px;padding:6px}#status{color:#91dfc7;min-height:36px}
-@media(max-width:700px){#map{inset:0 0 45%}aside{top:55%;width:100%;height:45%}}
-</style></head><body><div id="map"></div><aside>
-<a class="btn" href="/">← Înapoi la generator</a><h1>Desenează zone</h1>
-<p>Harta este 2D. Apasă pe hartă pentru a adăuga puncte; închide forma cu butonul, apoi salveaz-o cu un nume.</p>
-<div class="actions"><button id="start">Desenează o zonă</button><button id="undo" disabled>Șterge ultimul punct</button>
-<button id="finish" disabled>Închide forma</button><button id="cancel" disabled>Anulează desenul</button></div>
-<label for="zoneName">Numele zonei</label><input type="text" id="zoneName" maxlength="80" placeholder="ex. Centru - vest">
-<div class="actions"><button id="save" disabled>Salvează zona</button></div>
-<div id="status" class="hint" role="status"></div><hr><h2>Zone salvate</h2>
-<p>Zonele sunt păstrate în acest browser. Descarcă proiectul pentru o copie de siguranță sau transfer.</p>
-<div class="actions"><button id="download">Descarcă proiectul</button><button id="open">Deschide proiect</button>
-<input id="file" type="file" accept=".geojson,.json,application/json" hidden></div>
-<div id="zones"></div><p>Acest pas salvează doar contururile. Generarea în interiorul lor și exportul FBX vor fi adăugate separat.</p>
-</aside><script src="/vendor/maplibre-gl.js"></script><script src="/ui/zone-draw.js"></script></body></html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Region Editor · Terragen</title>
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="/ui/style.css">
+  <style>
+    #map { position: fixed; inset: 0 380px 0 0; }
+    #panel {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 380px;
+      background: var(--panel); border-left: 1px solid var(--line);
+      overflow-y: auto; padding: 14px 16px 24px; backdrop-filter: blur(12px);
+    }
+    .hud {
+      position: absolute; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(14, 17, 22, 0.88); border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px 14px; font-size: 12px;
+      backdrop-filter: blur(8px); display: flex; gap: 16px; align-items: center;
+      color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    .hud-metric { display: flex; flex-direction: column; }
+    .hud-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+    .hud-val { font-size: 13px; font-weight: 600; color: var(--accent); }
+    .hud-warn { color: var(--warn) !important; font-weight: 600; }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .actions button, .actions .btn { flex: 1 1 auto; font-size: 12px; padding: 7px 9px; }
+    .type-badge {
+      display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 4px; color: #fff; vertical-align: middle;
+    }
+    .color-swatch {
+      width: 14px; height: 14px; border-radius: 3px; display: inline-block;
+      vertical-align: middle; margin-right: 6px; border: 1px solid rgba(255,255,255,0.3);
+    }
+    .zone-card {
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+      padding: 10px; margin: 8px 0; transition: border-color 0.15s, background 0.15s;
+    }
+    .zone-card:hover { border-color: #3f5063; }
+    .zone-card.selected { border-color: var(--accent); background: #1f2a36; }
+    .zone-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .zone-meta { font-size: 11px; color: var(--dim); margin-top: 4px; display: flex; justify-content: space-between; }
+    .zone-actions { display: flex; gap: 4px; margin-top: 8px; }
+    .zone-actions button { font-size: 11px; padding: 4px 8px; border-radius: 6px; }
+    .mode-bar {
+      display: flex; gap: 4px; background: #10161e; padding: 3px; border-radius: 8px;
+      border: 1px solid var(--line); margin-bottom: 10px;
+    }
+    .mode-btn {
+      flex: 1; font-size: 11px; padding: 6px 4px; border: none; background: transparent;
+      color: var(--dim); border-radius: 6px; cursor: pointer; text-align: center;
+    }
+    .mode-btn.active { background: var(--panel-2); color: var(--accent); font-weight: 600; }
+    .conflict-box {
+      background: #2a1b1a; border: 1px solid #7c312d; border-radius: 6px;
+      padding: 8px; font-size: 11px; color: #ff9b94; margin: 6px 0;
+    }
+    .status-pill {
+      font-size: 9px; text-transform: uppercase; padding: 1px 5px; border-radius: 3px;
+      background: #283340; color: #adbccc;
+    }
+    .status-built { background: #164332; color: #4ee0a9; }
+    .status-generating { background: #4a3b1a; color: #ffd269; }
+    .status-error { background: #4a1e1b; color: #ff8882; }
+    @media (max-width: 800px) {
+      #map { inset: 0 0 50%; }
+      #panel { top: 50%; width: 100%; height: 50%; border-left: none; border-top: 1px solid var(--line); }
+      .hud { bottom: auto; top: 12px; left: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Real-time Metrics HUD -->
+  <div class="hud" id="hud">
+    <div class="hud-metric">
+      <span class="hud-label">Suprafață</span>
+      <span class="hud-val" id="hudArea">0 m²</span>
+    </div>
+    <div class="hud-metric">
+      <span class="hud-label">Dimensiuni (L × l)</span>
+      <span class="hud-val" id="hudDims">0 × 0 m</span>
+    </div>
+    <div class="hud-metric">
+      <span class="hud-label">Geometrie</span>
+      <span class="hud-val" id="hudStatus">Pregătit</span>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <header>
+      <div class="logo">Terragen <span>Region Editor</span></div>
+      <a class="btn" href="/" style="padding:4px 8px; font-size:11px;">← Generator</a>
+    </header>
+
+    <!-- Project Selector -->
+    <section>
+      <div class="label">Proiect Activ <span id="projectSyncStatus">Local</span></div>
+      <div style="display:flex; gap:6px;">
+        <select id="projectSelect">
+          <option value="">Fără proiect (stocare browser / fișier)</option>
+        </select>
+        <button id="refreshProjects" title="Reîncarcă lista de proiecte" style="padding:6px 10px;">↻</button>
+      </div>
+    </section>
+
+    <!-- Drawing & Editing Mode Bar -->
+    <section>
+      <div class="label">Mod Interacțiune</div>
+      <div class="mode-bar">
+        <button class="mode-btn active" id="modeSelect">Selectare</button>
+        <button class="mode-btn" id="modeDrawRegion">Desenează</button>
+        <button class="mode-btn" id="modeDrawHole">Gaură</button>
+        <button class="mode-btn" id="modeEditVertices">Vârfuri</button>
+        <button class="mode-btn" id="modeSplit">Tăiere</button>
+      </div>
+
+      <div class="actions">
+        <button id="start">Contur nou</button>
+        <button id="undo" disabled>Pas înapoi</button>
+        <button id="finish" disabled>Închide forma</button>
+        <button id="cancel" disabled>Anulează</button>
+      </div>
+    </section>
+
+    <!-- Region Inspector & Settings -->
+    <section id="inspectorSection">
+      <div class="label">Proprietăți Regiune <span id="inspectorModeLabel">Nouă</span></div>
+
+      <label for="zoneName">Nume regiune</label>
+      <input type="text" id="zoneName" maxlength="80" placeholder="ex. Centrul Istoric">
+
+      <div class="grid2 tight">
+        <div>
+          <label for="zoneType">Tip regiune</label>
+          <select id="zoneType">
+            <option value="urban">Urban</option>
+            <option value="suburban">Suburban</option>
+            <option value="industrial">Industrial</option>
+            <option value="forest">Pădure (Forest)</option>
+            <option value="grassland">Pajiște (Grassland)</option>
+            <option value="mountain">Munte (Mountain)</option>
+            <option value="agricultural">Agricol</option>
+            <option value="water">Apă (Water)</option>
+            <option value="custom">Personalizat (Custom)</option>
+          </select>
+        </div>
+        <div>
+          <label for="zoneColor">Culoare</label>
+          <input type="color" id="zoneColor" value="#e74c3c" style="height:32px; padding:2px 4px; cursor:pointer;">
+        </div>
+      </div>
+
+      <div class="grid2 tight">
+        <div>
+          <label for="zoneSeed">Seed procedural</label>
+          <input type="number" id="zoneSeed" value="7">
+        </div>
+        <div>
+          <label for="zoneStylePreset">Preset stil</label>
+          <select id="zoneStylePreset">
+            <option value="default">Implicit (Default)</option>
+            <option value="dense_urban">Urban dens</option>
+            <option value="residential">Rezidențial</option>
+            <option value="commercial_park">Parc comercial</option>
+            <option value="dense_woodland">Pădure deasă</option>
+            <option value="open_plains">Câmpie deschisă</option>
+            <option value="rugged_terrain">Teren accidentat</option>
+            <option value="cropland_fields">Terenuri cultivate</option>
+            <option value="water_basin">Bazin acvatic</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Detail toggles -->
+      <div class="checks">
+        <label><input type="checkbox" id="zoneRoofs" checked> Generare acoperișuri volumetrice</label>
+        <label><input type="checkbox" id="zoneLocked"> Blochează geometria (Lock)</label>
+        <label><input type="checkbox" id="zoneVisible" checked> Vizibil pe hartă</label>
+      </div>
+
+      <div class="actions" style="margin-top:12px;">
+        <button id="save" disabled class="accent" style="font-weight:600;">Salvează regiunea</button>
+        <button id="duplicateBtn" disabled>Duplică</button>
+        <button id="deleteBtn" disabled style="color:#ff9b94;">Șterge</button>
+      </div>
+
+      <div class="actions">
+        <button id="generateRegionBtn" disabled style="background:#1b3d30; border-color:#2a7b5d; color:#4ee0a9; width:100%;">
+          ⚡ Generează 3D pentru această regiune
+        </button>
+      </div>
+    </section>
+
+    <!-- Multi-Select & Batch Tools -->
+    <section>
+      <div class="label">Operații Multi-Select</div>
+      <div class="actions">
+        <button id="selectAllBtn">Selectează toate</button>
+        <button id="mergeBtn" disabled>Unește selectate (Merge)</button>
+        <button id="validateConflictsBtn">Verifică suprapuneri</button>
+      </div>
+      <div id="conflictList"></div>
+    </section>
+
+    <!-- Region List -->
+    <section>
+      <div class="label">Regiuni Salvate (<span id="regionCount">0</span>)</div>
+      <div id="zones">Nicio regiune salvată.</div>
+    </section>
+
+    <!-- Import / Export / Backup -->
+    <section>
+      <div class="label">Stocare & Export</div>
+      <div class="actions">
+        <button id="download">Descarcă GeoJSON</button>
+        <button id="open">Încarcă GeoJSON</button>
+        <input id="file" type="file" accept=".geojson,.json,application/json" hidden>
+      </div>
+    </section>
+
+    <div id="status" class="hint" role="status" style="margin-top:10px; min-height:28px;"></div>
+  </aside>
+
+  <script src="/vendor/maplibre-gl.js"></script>
+  <script src="/ui/zone-draw.js"></script>
+</body>
+</html>

@@ -1,14 +1,21 @@
-# terragen-web
+# Terragen World Builder
 
-**Orașe 3D din date reale (OpenStreetMap + model digital al terenului) — generate în browser, fără Unity, fără Blender.**
+**Large-world procedural 3D map generator based on real geographic data (OpenStreetMap + DEM) with stylized visuals and professional Blender export pipeline.**
 
 [![CI](https://github.com/MoraruCatalin93/Generare-Orase-3D/actions/workflows/ci.yml/badge.svg)](https://github.com/MoraruCatalin93/Generare-Orase-3D/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Selectezi o zonă pe hartă → apeși un buton → primești terenul cu relief, drumurile, trotuarele și
-clădirile cu acoperișuri și **ferestre reale** → le vezi imediat în viewer-ul 3D din browser și le
-descarci ca **GLB** pentru orice engine.
+---
+
+## Documentation
+- 📖 **[User Guide (docs/USER_GUIDE.md)](docs/USER_GUIDE.md)**: Step-by-step instructions for projects, geographic selection, terrain editing, region drawing, stylized presets, chunk generation, and Blender importing.
+- 🛠️ **[Developer Guide (docs/DEVELOPER_GUIDE.md)](docs/DEVELOPER_GUIDE.md)**: Architectural specifications, schema definitions, coordinate frames, chunking math, and extension points.
+- 🚀 **[Quick Start Guide (CUM-INCEPI.md)](CUM-INCEPI.md)**: Local installation and environment setup.
+
+---
+
+Select a zone on the map → generate stylized terrain with topography, draped streets, and procedural buildings → view instantly in the 3D browser viewer or export directly into **Blender 3.x / 4.x / 5.x LTS** for final scene staging and Unity preparation.
 
 ![Viewer 3D](docs/preview-3d.jpg)
 

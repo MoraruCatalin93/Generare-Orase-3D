@@ -11,6 +11,7 @@ htmlcov/
 sites/
 dist/
 out/
+/projects/
 *.osm.pbf
 *.osm.pbf.part
 _*.zip

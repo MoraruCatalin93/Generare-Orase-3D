@@ -31,6 +31,7 @@ LAYERS = (
     "roads",
     "sidewalks",
     "buildings",
+    "vegetation",
     "green",
     "forest",
     "water",
@@ -70,6 +71,7 @@ def generate(
     ways=None,
     log=None,
     is_cancelled=None,
+    style_preset: Any = None,
 ):
     """Generează straturile 3D și scrie manifestul. Returnează manifestul (dict)."""
     log = log or (lambda msg: print(msg, flush=True))
@@ -123,7 +125,16 @@ def generate(
     )
 
     check_cancelled()
-    b = CityBuilder(ways, proj, dem, size_m=size, terrain_res=terrain_res, seed=seed, roofs=roofs)
+    b = CityBuilder(
+        ways,
+        proj,
+        dem,
+        size_m=size,
+        terrain_res=terrain_res,
+        seed=seed,
+        roofs=roofs,
+        style_preset=style_preset,
+    )
 
     log("[3/6] Teren …")
     terrain = b.build_terrain()
@@ -137,19 +148,27 @@ def generate(
     )
 
     check_cancelled()
-    log("[5/6] Clădiri + zone verzi / apă / parcări …")
+    log("[5/6] Clădiri + zone verzi / apă / vegetație …")
     buildings = b.build_buildings()
     check_cancelled()
     areas = b.build_areas()
+    check_cancelled()
+    veg = b.build_vegetation()
     log(
         f"      clădiri {b.stats['buildings']:,} ({len(buildings.f):,} tri) · "
         f"zone {b.stats['areas']}"
     )
+    if len(veg.f):
+        log(f"      vegetație procedurală {len(veg.f):,} triunghiuri")
 
     check_cancelled()
     log("[6/6] Export …")
     layers = {"terrain": terrain, "roads": roads, "sidewalks": walks, "buildings": buildings}
-    for k in LAYERS[4:]:
+    if len(veg.f):
+        layers["vegetation"] = veg
+    for k in LAYERS:
+        if k in ("terrain", "roads", "sidewalks", "buildings", "vegetation"):
+            continue
         if k in areas and len(areas[k].f):
             layers[k] = areas[k]
 

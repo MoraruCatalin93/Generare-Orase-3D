@@ -105,6 +105,74 @@ def _cmd_check(a) -> None:
     print("\n✔ totul e în ordine:  ./start.sh   (sau  python3 -m terragen serve)\n")
 
 
+def _cmd_project(a) -> None:
+    import json
+    from .cli import parse_center, generate
+    from .projects import ProjectManager
+
+    mgr = ProjectManager()
+    action = a.action
+
+    if action == "list":
+        projects = mgr.list_projects()
+        if not projects:
+            print("Niciun proiect găsit în projects/")
+            return
+        print(f"\nProiecte Terragen ({len(projects)}):\n")
+        for p in projects:
+            c = p.get("center", {})
+            print(
+                f"  • {p['name']} [{p['slug']}] — {p.get('size_m', 0):.0f}m · "
+                f"centru {c.get('lat', 0):.4f}, {c.get('lon', 0):.4f}"
+            )
+        print()
+
+    elif action == "create":
+        center = parse_center(a.center)
+        proj = mgr.create_project(
+            name=a.name,
+            center=center,
+            size=a.size,
+            seed=a.seed,
+            terrain_res=a.terrain_res,
+            dem_zoom=a.dem_zoom,
+            formats=("glb", "obj") if a.obj else ("glb",),
+            roofs=not a.no_roofs,
+            description=a.description or "",
+        )
+        print(f"✔ Proiect creat: {proj.name} ({proj.slug}) în projects/{proj.slug}/project.json")
+
+    elif action == "show":
+        proj = mgr.open_project(a.slug)
+        print(json.dumps(proj.to_dict(), indent=2, ensure_ascii=False))
+
+    elif action == "build":
+        proj = mgr.open_project(a.slug)
+        out_dir = a.out or f"sites/{proj.slug}"
+        print(f"Generez proiectul '{proj.name}' -> {out_dir} …")
+        from .server import detect_pbf
+        pbf = detect_pbf()
+        manifest = generate(
+            center=(proj.geographic.center_lat, proj.geographic.center_lon),
+            size=proj.dimensions.size_x_m,
+            out=out_dir,
+            pbf=pbf,
+            overpass=pbf is None,
+            terrain_res=proj.terrain.resolution,
+            dem_zoom=proj.terrain.dem_zoom,
+            formats=proj.generation.formats,
+            roofs=proj.generation.roofs,
+            seed=proj.seed,
+            name=proj.name,
+        )
+        proj.assets.build_dir = str(Path(out_dir).resolve())
+        proj.assets.manifest_path = str(Path(out_dir).resolve() / "manifest.json")
+        proj.assets.last_build_stats = manifest.get("stats", {})
+        mgr.save_project(proj)
+        print(f"✔ Gata: {out_dir}/manifest.json")
+
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(
         prog="terragen",
@@ -142,6 +210,30 @@ def main(argv=None) -> None:
 
     c = sub.add_parser("check", help="verifică instalarea")
     c.set_defaults(func=_cmd_check)
+
+    p = sub.add_parser("project", help="gestionează proiectele persistente Terragen")
+    p_sub = p.add_subparsers(dest="action", required=True)
+
+    p_list = p_sub.add_parser("list", help="listează proiectele existente")
+    p_create = p_sub.add_parser("create", help="creează un proiect nou")
+    p_create.add_argument("--name", required=True, help="numele proiectului")
+    p_create.add_argument("--center", default="targu-mures", help="preset sau `lat,lon`")
+    p_create.add_argument("--size", type=float, default=1500.0, help="dimensiune în metri")
+    p_create.add_argument("--seed", type=int, default=7)
+    p_create.add_argument("--terrain-res", type=int, default=256, dest="terrain_res")
+    p_create.add_argument("--dem-zoom", type=int, default=15, dest="dem_zoom")
+    p_create.add_argument("--obj", action="store_true")
+    p_create.add_argument("--no-roofs", action="store_true")
+    p_create.add_argument("--description", default="")
+
+    p_show = p_sub.add_parser("show", help="afișează metadatele unui proiect")
+    p_show.add_argument("slug", help="slug-ul sau ID-ul proiectului")
+
+    p_build = p_sub.add_parser("build", help="generează 3D pe baza unui proiect")
+    p_build.add_argument("slug", help="slug-ul sau ID-ul proiectului")
+    p_build.add_argument("--out", default=None, help="folder de ieșire (implicit sites/<slug>)")
+
+    p.set_defaults(func=_cmd_project)
 
     a = ap.parse_args(argv)
     if not getattr(a, "func", None):
