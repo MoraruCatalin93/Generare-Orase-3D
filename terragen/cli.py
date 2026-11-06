@@ -51,6 +51,10 @@ def parse_center(txt: str):
     return lat, lon
 
 
+class GenerationCancelled(Exception):
+    """Generarea a fost oprită la cererea utilizatorului."""
+
+
 def generate(
     center,
     size: float = 1500.0,
@@ -65,9 +69,16 @@ def generate(
     name: str | None = None,
     ways=None,
     log=None,
+    is_cancelled=None,
 ):
     """Generează straturile 3D și scrie manifestul. Returnează manifestul (dict)."""
     log = log or (lambda msg: print(msg, flush=True))
+
+    def check_cancelled():
+        if is_cancelled is not None and is_cancelled():
+            raise GenerationCancelled("Generarea a fost anulată")
+
+    check_cancelled()
     t0 = time.time()
     lat0, lon0 = center
     out = Path(out)
@@ -103,6 +114,7 @@ def generate(
             )
     log(f"      {len(ways)} obiecte utile (clădiri / drumuri / zone)")
 
+    check_cancelled()
     log(f"[2/6] Relief — DEM zoom {dem_zoom} …")
     dem = Dem(bbox, zoom=dem_zoom)
     log(
@@ -110,26 +122,31 @@ def generate(
         f"~{dem.meters_per_pixel(lat0):.1f} m/pixel"
     )
 
+    check_cancelled()
     b = CityBuilder(ways, proj, dem, size_m=size, terrain_res=terrain_res, seed=seed, roofs=roofs)
 
     log("[3/6] Teren …")
     terrain = b.build_terrain()
     log(f"      {len(terrain.f):,} triunghiuri, altitudini {b.stats['terrain_elev_range']} m")
 
+    check_cancelled()
     log("[4/6] Drumuri + trotuare …")
     roads, walks, network = b.build_roads()
     log(
         f"      carosabil {len(roads.f):,} tri · trotuare {len(walks.f):,} · {len(network)} segmente"
     )
 
+    check_cancelled()
     log("[5/6] Clădiri + zone verzi / apă / parcări …")
     buildings = b.build_buildings()
+    check_cancelled()
     areas = b.build_areas()
     log(
         f"      clădiri {b.stats['buildings']:,} ({len(buildings.f):,} tri) · "
         f"zone {b.stats['areas']}"
     )
 
+    check_cancelled()
     log("[6/6] Export …")
     layers = {"terrain": terrain, "roads": roads, "sidewalks": walks, "buildings": buildings}
     for k in LAYERS[4:]:
@@ -140,6 +157,7 @@ def generate(
     files: dict = {}
     if "glb" in formats:
         for k, m in layers.items():
+            check_cancelled()
             n = write_glb(
                 m, out / "glb" / f"{k}.glb", texture_png=tex if k in TEXTURED_LAYERS else None
             )
@@ -148,6 +166,7 @@ def generate(
                 files[k]["glb_mb"] = round(n / 1e6, 2)
     if "obj" in formats:
         for k, m in layers.items():
+            check_cancelled()
             n = write_obj(
                 m,
                 out / "obj" / f"{k}.obj",
@@ -158,6 +177,7 @@ def generate(
                 files.setdefault(k, {})["obj"] = f"obj/{k}.obj"
                 files[k]["obj_mb"] = round(n / 1e6, 2)
 
+    check_cancelled()
     hm = write_heightmap(b.terrain_z, out / "terrain", size_m=size)
     graph = build_network_graph(network)
     write_json(graph, out / "data" / "roads_network.json")
@@ -198,6 +218,7 @@ def generate(
         "network": {"nodes": len(graph["nodes"]), "edges": len(graph["edges"])},
         "source": "OpenStreetMap (© contributori OSM, ODbL) · DEM Terrarium (AWS/Mapzen)",
     }
+    check_cancelled()
     write_json(manifest, out / "manifest.json")
 
     log(f"Gata în {time.time() - t0:.1f}s -> {out}")

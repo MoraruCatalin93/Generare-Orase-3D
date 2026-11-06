@@ -23,3 +23,6 @@ _*.zip
 
 # secrete locale
 .env
+
+# metadate generate la instalarea pachetului Python
+*.egg-info/

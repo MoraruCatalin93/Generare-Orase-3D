@@ -50,6 +50,9 @@ def build_static(site_dir: Path, out_dir: Path) -> Path:
     if not mf.exists():
         raise FileNotFoundError(f"nu găsesc {mf} — generează întâi orașul")
     dest = Path(out_dir).resolve() / site_dir.name
+    # Ștergerea destinației nu trebuie să atingă sursa, nici invers.
+    if dest == site_dir or dest in site_dir.parents or site_dir in dest.parents:
+        raise ValueError("directorul sursă și destinația exportului nu trebuie să se suprapună")
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
