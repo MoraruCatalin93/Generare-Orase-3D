@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desenează zone · terragen</title><link rel="stylesheet" href="/vendor/maplibre-gl.css">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10161e;color:#e7edf3;font:14px system-ui,sans-serif}
+#map{position:absolute;inset:0 330px 0 0}aside{position:absolute;right:0;top:0;bottom:0;width:330px;overflow:auto;padding:20px;background:#121b25}
+h1{font-size:19px;margin:4px 0 8px}p,.hint{font-size:12px;line-height:1.5;color:#aab7c4}button,a.btn,input{font:inherit}
+button,a.btn{display:inline-block;border:1px solid #3e596c;border-radius:8px;background:#203346;color:#edf6fc;padding:9px;cursor:pointer;text-decoration:none}
+button:hover,a.btn:hover{border-color:#46c9a4}button:disabled{opacity:.5;cursor:default}.actions{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}
+input[type=text]{width:100%;padding:9px;background:#192633;color:white;border:1px solid #3b4a59;border-radius:7px}
+.zone{background:#192633;border:1px solid #314351;border-radius:8px;padding:8px;margin:8px 0}.zone strong{overflow-wrap:anywhere}
+.zone .actions{margin:7px 0 0}.zone button{font-size:12px;padding:6px}#status{color:#91dfc7;min-height:36px}
+@media(max-width:700px){#map{inset:0 0 45%}aside{top:55%;width:100%;height:45%}}
+</style></head><body><div id="map"></div><aside>
+<a class="btn" href="/">← Înapoi la generator</a><h1>Desenează zone</h1>
+<p>Harta este 2D. Apasă pe hartă pentru a adăuga puncte; închide forma cu butonul, apoi salveaz-o cu un nume.</p>
+<div class="actions"><button id="start">Desenează o zonă</button><button id="undo" disabled>Șterge ultimul punct</button>
+<button id="finish" disabled>Închide forma</button><button id="cancel" disabled>Anulează desenul</button></div>
+<label for="zoneName">Numele zonei</label><input type="text" id="zoneName" maxlength="80" placeholder="ex. Centru - vest">
+<div class="actions"><button id="save" disabled>Salvează zona</button></div>
+<div id="status" class="hint" role="status"></div><hr><h2>Zone salvate</h2>
+<p>Zonele sunt păstrate în acest browser. Descarcă proiectul pentru o copie de siguranță sau transfer.</p>
+<div class="actions"><button id="download">Descarcă proiectul</button><button id="open">Deschide proiect</button>
+<input id="file" type="file" accept=".geojson,.json,application/json" hidden></div>
+<div id="zones"></div><p>Acest pas salvează doar contururile. Generarea în interiorul lor și exportul FBX vor fi adăugate separat.</p>
+</aside><script src="/vendor/maplibre-gl.js"></script><script src="/ui/zone-draw.js"></script></body></html>

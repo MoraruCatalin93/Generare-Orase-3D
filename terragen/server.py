@@ -626,6 +626,73 @@ def site_files(f: str):
     return send_from_directory(SITES_DIR, f)
 
 
+# Previzualizare locală în jurul centrului hărții. Un singur scan PBF odată.
+_MAP_BUILDINGS_LOCK = threading.Lock()
+_MAP_BUILDINGS_CACHE: dict = {}
+
+
+@app.get("/api/map-buildings")
+def api_map_buildings():
+    from .map_style import map_building_style
+    from .osmdata import read_osm
+
+    try:
+        lat = float(request.args["lat"])
+        lon = float(request.args["lon"])
+        if not (18 <= lat <= 72 and -30 <= lon <= 45):
+            raise ValueError("coordonate")
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "coordonate invalide"}), 400
+    pbf = detect_pbf()
+    if not pbf:
+        return jsonify({"error": "Nu am găsit fișierul local .osm.pbf"}), 404
+    # Zona fixă reduce numărul de scanări când harta se mișcă puțin.
+    lat = round(lat, 2)
+    lon = round(lon, 2)
+    try:
+        st = Path(pbf).stat()
+    except OSError:
+        return jsonify({"error": "Fișierul PBF nu poate fi citit"}), 404
+    key = (pbf, st.st_size, st.st_mtime_ns, lat, lon)
+    if key in _MAP_BUILDINGS_CACHE:
+        return jsonify(_MAP_BUILDINGS_CACHE[key])
+    if not _MAP_BUILDINGS_LOCK.acquire(blocking=False):
+        return jsonify({"error": "Citirea PBF este deja în curs"}), 429
+    try:
+        if key in _MAP_BUILDINGS_CACHE:
+            return jsonify(_MAP_BUILDINGS_CACHE[key])
+        # Acoperă o parte mai mare a orașului în jurul centrului hărții.
+        bbox = (lat - 0.04, lon - 0.06, lat + 0.04, lon + 0.06)
+        ways = read_osm(pbf, bbox)
+        features = []
+        for way in ways:
+            tags = way.tags
+            if not ((tags.get("building") and tags.get("building") != "no")
+                    or (tags.get("building:part") and tags.get("building:part") != "no")):
+                continue
+            rings = way.rings if way.rings else [way.coords]
+            # Contururile incomplete de la marginea zonei nu sunt poligoane valide.
+            if not rings or any(len(ring) < 4 or ring[0] != ring[-1] for ring in rings):
+                continue
+            features.append({
+                "type": "Feature",
+                "properties": map_building_style(tags, way.id),
+                "geometry": {"type": "Polygon", "coordinates": rings},
+            })
+            if len(features) >= 60000:
+                break
+        result = {"type": "FeatureCollection", "features": features}
+        if len(_MAP_BUILDINGS_CACHE) >= 8:
+            _MAP_BUILDINGS_CACHE.pop(next(iter(_MAP_BUILDINGS_CACHE)))
+        _MAP_BUILDINGS_CACHE[key] = result
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.exception("Citire PBF pentru hartă eșuată")
+        return jsonify({"error": f"Citirea PBF a eșuat: {type(exc).__name__}"}), 500
+    finally:
+        _MAP_BUILDINGS_LOCK.release()
+
+
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True, "version": __version__})

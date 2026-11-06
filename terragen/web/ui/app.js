@@ -33,7 +33,7 @@ function buildStyle(satellite) {
 const map = new maplibregl.Map({
   container: 'map',
   style: buildStyle(false),
-  center: HOME, zoom: 13.4, pitch: 62, bearing: -20,
+  center: HOME, zoom: 15.5, pitch: 62, bearing: -20,
   maxPitch: 85, antialias: true, attributionControl: false,
   hash: false,
 });
@@ -67,11 +67,72 @@ const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
 
 map.on('load', () => {
   $('loading').classList.add('hidden');
-  map.addSource('sel', { type: 'geojson', data: emptyFC() });
   applyTerrain();
   setupSelectionLayers();
 });
 map.on('style.load', () => { applyTerrain(); setupSelectionLayers(); });
+
+/* ------------------------------------- clădiri 3D din extractul PBF local */
+let buildingData = { type: 'FeatureCollection', features: [] };
+let buildingTimer = null;
+let buildingRequest = 0;
+let buildingKey = null;
+let buildingNoticeShown = false;
+
+function setupBuildingLayer() {
+  if (!map.getSource('local-buildings')) {
+    map.addSource('local-buildings', { type: 'geojson', data: buildingData });
+  }
+  if (!map.getLayer('local-buildings-3d')) {
+    map.addLayer({
+      id: 'local-buildings-3d', type: 'fill-extrusion', source: 'local-buildings',
+      minzoom: 14.5,
+      paint: {
+        'fill-extrusion-color': ['to-color', ['get', 'color'], '#c9b8a4'],
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['coalesce', ['get', 'base'], 0],
+        'fill-extrusion-opacity': 0.92,
+      },
+    });
+  }
+}
+
+function scheduleBuildings(delay = 900) {
+  clearTimeout(buildingTimer);
+  // Rezultatele anterioare nu trebuie să suprascrie centrul curent.
+  const requestId = ++buildingRequest;
+  if (map.getZoom() < 14.5) {
+    buildingKey = null;
+    return;
+  }
+  const center = map.getCenter();
+  const key = `${center.lat.toFixed(2)},${center.lng.toFixed(2)}`;
+  if (key === buildingKey) return;
+  buildingTimer = setTimeout(async () => {
+    if (!buildingNoticeShown) {
+      buildingNoticeShown = true;
+      toast('Se citesc clădirile din PBF. Prima citire poate dura câteva minute.', 8000);
+    }
+    try {
+      const url = `/api/map-buildings?lat=${encodeURIComponent(center.lat)}&lon=${encodeURIComponent(center.lng)}`;
+      const response = await fetch(url);
+      if (requestId !== buildingRequest) return;
+      if (response.status === 429) { scheduleBuildings(3000); return; }
+      const data = await response.json();
+      if (!response.ok) { toast(data.error || 'Nu pot încărca clădirile', 6000); return; }
+      buildingData = data;
+      buildingKey = key;
+      if (map.getSource('local-buildings')) map.getSource('local-buildings').setData(data);
+      toast(`${data.features.length} clădiri încărcate în jurul centrului hărții`, 3500);
+    } catch (error) {
+      if (requestId === buildingRequest) toast('Nu pot încărca clădirile locale', 6000);
+      console.error(error);
+    }
+  }, delay);
+}
+
+map.on('style.load', () => { setupBuildingLayer(); scheduleBuildings(); });
+map.on('moveend', () => scheduleBuildings());
 
 /* ------------------------------------------------------- selectarea zonei */
 function squareRing(lon, lat, sizeM) {
