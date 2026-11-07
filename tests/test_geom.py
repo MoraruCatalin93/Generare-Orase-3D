@@ -44,6 +44,11 @@ def test_extrude_walls_are_flat_shaded():
     for vec in n:
         assert abs(vec[1]) < 1e-9  # pereți verticali
         assert abs(abs(vec[0]) + abs(vec[2]) - 1.0) < 1e-6  # axați pe X sau Z
+    center = np.array([5.0, 5.0, 5.0])
+    tri_centers = np.mean(tri, axis=1)
+    outward_vectors = tri_centers - center
+    dots = np.sum(n * outward_vectors, axis=1)
+    assert (dots > 0).all()  # toate normalele de perete indică spre exterior
 
 
 def test_extrude_cap_faces_up():

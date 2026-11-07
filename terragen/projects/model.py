@@ -523,6 +523,8 @@ class GenerationSettings:
     building_palette_seed: int = 7
     road_width_scale: float = 1.0
     detail_level: str = "medium"  # low | medium | high
+    style_preset: str = "stylized_realistic"
+    dressing_density_multiplier: float = 1.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -531,6 +533,8 @@ class GenerationSettings:
             "building_palette_seed": int(self.building_palette_seed),
             "road_width_scale": round(float(self.road_width_scale), 2),
             "detail_level": self.detail_level,
+            "style_preset": self.style_preset,
+            "dressing_density_multiplier": round(float(self.dressing_density_multiplier), 2),
         }
 
     @classmethod
@@ -546,6 +550,8 @@ class GenerationSettings:
             building_palette_seed=int(data.get("building_palette_seed", data.get("seed", 7))),
             road_width_scale=float(data.get("road_width_scale", 1.0)),
             detail_level=str(data.get("detail_level", "medium")),
+            style_preset=str(data.get("style_preset", "stylized_realistic")),
+            dressing_density_multiplier=float(data.get("dressing_density_multiplier", 1.0)),
         )
 
 

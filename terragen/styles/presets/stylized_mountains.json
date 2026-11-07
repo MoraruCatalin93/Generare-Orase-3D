@@ -1,0 +1,192 @@
+{
+  "name": "stylized_mountains",
+  "label": "Stylized Mountains",
+  "description": "Dramatic high alpine terrain with exposed granite ridges, subalpine pines, and permanent snow peaks.",
+  "version": "1.0.0",
+  "building": {
+    "simplification_tol": 0.8,
+    "min_area": 12.0,
+    "height_scale": 0.95,
+    "height_variation": 0.28,
+    "roof_overhang": 0.55,
+    "roof_ridge_scale": 1.25,
+    "ground_floor_darkening": 0.82,
+    "add_chimneys": true,
+    "roof_styles": [
+      "gable"
+    ],
+    "facade_palette": [
+      [
+        208,
+        192,
+        170
+      ],
+      [
+        182,
+        162,
+        140
+      ],
+      [
+        155,
+        145,
+        135
+      ]
+    ],
+    "roof_palette": [
+      [
+        142,
+        68,
+        52
+      ],
+      [
+        82,
+        75,
+        78
+      ],
+      [
+        105,
+        102,
+        108
+      ]
+    ],
+    "roughness": 0.84,
+    "metallic": 0.02
+  },
+  "vegetation": {
+    "enabled": true,
+    "density_per_ha": 28.0,
+    "forest_density_per_ha": 140.0,
+    "tree_types": [
+      "pine"
+    ],
+    "foliage_palette": [
+      [
+        48,
+        115,
+        62
+      ],
+      [
+        62,
+        132,
+        74
+      ],
+      [
+        78,
+        145,
+        86
+      ]
+    ],
+    "trunk_palette": [
+      [
+        85,
+        60,
+        42
+      ]
+    ],
+    "scale_min": 0.65,
+    "scale_max": 1.25,
+    "max_slope_deg": 36.0,
+    "exclude_roads_buffer_m": 2.5,
+    "exclude_buildings_buffer_m": 2.0
+  },
+  "terrain": {
+    "elevation_scale": 1.0,
+    "elevation_offset_m": 0.0,
+    "low_color": [
+      112,
+      160,
+      85
+    ],
+    "mid_color": [
+      145,
+      168,
+      105
+    ],
+    "high_color": [
+      165,
+      158,
+      135
+    ],
+    "rock_color": [
+      125,
+      126,
+      130
+    ],
+    "peak_color": [
+      245,
+      248,
+      252
+    ],
+    "slope_threshold_deg": 16.0,
+    "slope_blend_range_deg": 12.0,
+    "roughness": 0.88,
+    "metallic": 0.0
+  },
+  "roads": {
+    "asphalt_color": [
+      65,
+      68,
+      74
+    ],
+    "sidewalk_color": [
+      152,
+      150,
+      145
+    ],
+    "track_color": [
+      135,
+      122,
+      105
+    ],
+    "width_scale": 0.95,
+    "roughness": 0.75,
+    "metallic": 0.03
+  },
+  "water": {
+    "color": [
+      42,
+      130,
+      172
+    ],
+    "opacity": 0.9,
+    "surface_offset_m": -0.35,
+    "roughness": 0.1,
+    "metallic": 0.06
+  },
+  "lighting": {
+    "sun_azimuth_deg": 35.0,
+    "sun_elevation_deg": 55.0,
+    "sun_color": [
+      255,
+      250,
+      240
+    ],
+    "sun_intensity": 4.2,
+    "ambient_color": [
+      170,
+      200,
+      240
+    ],
+    "sky_horizon_color": [
+      205,
+      225,
+      250
+    ],
+    "sky_zenith_color": [
+      95,
+      145,
+      225
+    ],
+    "fog_enabled": true,
+    "fog_density": 0.0006,
+    "fog_color": [
+      215,
+      230,
+      248
+    ]
+  },
+  "material": {
+    "roughness": 0.82,
+    "metallic": 0.04
+  }
+}

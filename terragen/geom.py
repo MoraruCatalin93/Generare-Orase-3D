@@ -19,6 +19,7 @@ class Mesh:
         self.f = np.zeros((0, 3), dtype=np.int64)
         self.c = np.zeros((0, 4), dtype=np.uint8)
         self.uv = np.zeros((0, 2), dtype=np.float64)
+        self.n = np.zeros((0, 3), dtype=np.float64)
 
     def __len__(self) -> int:
         return len(self.f)
@@ -27,7 +28,7 @@ class Mesh:
     def empty(self) -> bool:
         return len(self.f) == 0
 
-    def add(self, verts, faces, color=None, uv=None) -> None:
+    def add(self, verts, faces, color=None, uv=None, normals=None) -> None:
         verts = np.asarray(verts, dtype=np.float64)
         faces = np.asarray(faces, dtype=np.int64)
         if len(faces) == 0:
@@ -53,15 +54,26 @@ class Mesh:
         else:
             uvs = np.asarray(uv, dtype=np.float64).reshape(-1, 2)
 
+        if normals is None:
+            nrms = np.zeros((len(verts), 3), dtype=np.float64)
+        else:
+            nrms = np.asarray(normals, dtype=np.float64).reshape(-1, 3)
+
         self.f = np.vstack([self.f, faces + off])
         self.c = np.vstack([self.c, cols])
         self.uv = np.vstack([self.uv, uvs]) if len(self.uv) else uvs
+        self.n = np.vstack([self.n, nrms]) if len(self.n) else nrms
 
     def merged(self, other: Mesh) -> Mesh:
         out = Mesh()
         out.v = np.vstack([self.v, other.v])
         out.c = np.vstack([self.c, other.c])
         out.uv = np.vstack([self.uv, other.uv])
+        out.n = (
+            np.vstack([self.n, other.n])
+            if len(self.n) and len(other.n)
+            else np.zeros((len(out.v), 3), dtype=np.float64)
+        )
         out.f = np.vstack([self.f, other.f + len(self.v)])
         return out
 
@@ -172,11 +184,11 @@ def extrude(
         for k in range(m):
             b = 4 * k
             if ccw:
-                faces.append([b + 0, b + 1, b + 2])
-                faces.append([b + 0, b + 2, b + 3])
-            else:
                 faces.append([b + 0, b + 2, b + 1])
                 faces.append([b + 0, b + 3, b + 2])
+            else:
+                faces.append([b + 0, b + 1, b + 2])
+                faces.append([b + 0, b + 2, b + 3])
 
         vlist.append(wall_v)
         flist.append(np.asarray(faces, dtype=np.int64) + count)

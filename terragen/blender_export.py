@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import copy
 import datetime
-import hashlib
 import json
 import math
 import struct
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -148,6 +148,7 @@ def validate_glb_file(path: Path | str) -> dict[str, Any]:
         "nodes": [n.get("name") for n in nodes if "name" in n],
         "meshes_count": len(meshes),
         "materials": [m.get("name") for m in materials if "name" in m],
+        "materials_data": materials,
     }
 
 
@@ -201,8 +202,18 @@ def write_multi_mesh_glb(
     for layer_name, mesh in valid_layers.items():
         v = mesh.v.copy()
         v[:, 2] *= -1.0  # Terragen (+Z=North) -> glTF (-Z=North)
-        faces = mesh.f
-        normals = _vertex_normals(v, faces)
+        faces = mesh.f[:, [0, 2, 1]] if len(mesh.f) else mesh.f.copy()
+
+        if getattr(mesh, "n", None) is not None and len(mesh.n) == len(v) and np.any(mesh.n != 0):
+            normals = mesh.n.copy()
+            normals[:, 2] *= -1.0
+            zero_mask = np.linalg.norm(normals, axis=1) < 1e-6
+            if np.any(zero_mask):
+                auto_n = _vertex_normals(v, faces)
+                normals[zero_mask] = auto_n[zero_mask]
+        else:
+            normals = _vertex_normals(v, faces)
+
         colors = _srgb_to_linear(
             mesh.c if len(mesh.c) == len(v) else np.full((len(v), 4), 255, np.uint8)
         )
@@ -216,7 +227,7 @@ def write_multi_mesh_glb(
         i_uv = add_buf(uv.astype(np.float32), 34962, 5126, "VEC2")
         i_idx = add_buf(faces.astype(np.uint32).reshape(-1), 34963, 5125, "SCALAR")
 
-        # Material setup
+        # Material setup: Single-sided for opaque manifold meshes (GPU backface culling in Unity)
         mat_idx = len(materials)
         mat_name = f"mat_{layer_name}"
         material: dict[str, Any] = {
@@ -226,7 +237,7 @@ def write_multi_mesh_glb(
                 "metallicFactor": 0.05 if layer_name == "roads" else 0.0,
                 "roughnessFactor": 0.2 if layer_name == "water" else 0.85,
             },
-            "doubleSided": True,
+            "doubleSided": False,
         }
 
         if tex_bytes:
@@ -276,7 +287,7 @@ def write_multi_mesh_glb(
     # Assemble BufferViews
     blob = b"".join(p[0] for p in parts)
     offset = 0
-    for data, raw_len, target, ctype, atype in parts:
+    for data, raw_len, target, _ctype, _atype in parts:
         view = {"buffer": 0, "byteOffset": offset, "byteLength": raw_len}
         if target:
             view["target"] = target
@@ -323,11 +334,21 @@ BLENDER_IMPORT_SCRIPT_TEMPLATE = '''"""Standalone Terragen 3D World Importer for
 
 Features:
 - Imports Terragen Layer Mode and Chunk Mode export packages.
-- Automatically builds organized collections (Terragen root collection + Layer/Chunk subcollections).
-- Preserves object names, materials, vertex colors, UVs, and PBR properties.
-- Configures 3D Viewport clipping distance for large real-world scenes (50,000 meters).
+- Automatically organizes the scene into 9 clean production collections under WORLD:
+    * WORLD (Root Collection)
+    * TERRAIN (Relief & terrain chunks)
+    * ROADS (Highways, streets, sidewalks)
+    * BUILDINGS (Extruded architecture & roofs)
+    * WATER (Rivers, lakes, waterbodies)
+    * VEGETATION (Instanced trees, bushes, flowers)
+    * PROPS (Instanced street furniture, lamps, benches, ruins)
+    * COLLISION (Simplified collision geometry, wireframe, hide_render)
+    * LOD (Level of Detail variants: LOD_1, LOD_2)
+    * REFERENCE (Origin marker at 0,0,0 with WGS84 metadata, chunk boundaries)
+- Idempotent and repeatable: Re-running the script updates/replaces objects cleanly without creating .001 duplications.
+- Zero-VRAM Linked Duplicates for vegetation and environment props.
 - Consolidates duplicate materials (.001, .002) for clean shader organization.
-- Supports selective chunk and layer filtering.
+- Supports selective collection, chunk, and layer filtering.
 
 Run inside Blender:
   Open Blender -> Scripting Workspace -> Open this script -> Click 'Run Script' (Alt+P).
@@ -338,6 +359,7 @@ Or run via command line (headless / batch):
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -351,21 +373,42 @@ except ImportError:
     sys.exit(1)
 
 # -----------------------------------------------------------------------------
-# User Filters (Configure as needed)
+# User Filters (Configure via CLI or script variables)
 # -----------------------------------------------------------------------------
-# Set to a list of chunk IDs to import only specific chunks (e.g., ["chk_r00_c00", "chk_r00_c01"]).
-# Set to None to import all available chunks in the manifest.
+FILTER_COLLECTIONS: list[str] | None = None
 FILTER_CHUNKS: list[str] | None = None
-
-# Set to a list of layer names to import only specific layers (e.g., ["terrain", "buildings"]).
-# Set to None to import all available layers.
 FILTER_LAYERS: list[str] | None = None
-
-# Automatically set 3D Viewport clipping for large terrain scale
 SET_VIEWPORT_CLIPPING: bool = True
-
-# Consolidate duplicate materials with identical names
 CONSOLIDATE_MATERIALS: bool = True
+
+STANDARD_COLLECTION_NAMES = [
+    "TERRAIN",
+    "ROADS",
+    "BUILDINGS",
+    "WATER",
+    "VEGETATION",
+    "PROPS",
+    "COLLISION",
+    "LOD",
+    "REFERENCE",
+]
+
+
+def parse_cli_args():
+    global FILTER_COLLECTIONS, FILTER_CHUNKS, FILTER_LAYERS
+    if "--" in sys.argv:
+        argv = sys.argv[sys.argv.index("--") + 1 :]
+        parser = argparse.ArgumentParser(description="Terragen Blender Importer")
+        parser.add_argument("--collections", type=str, default=None, help="Comma-separated collections to import")
+        parser.add_argument("--chunks", type=str, default=None, help="Comma-separated chunk IDs to import")
+        parser.add_argument("--layers", type=str, default=None, help="Comma-separated layer names to import")
+        args, _ = parser.parse_known_args(argv)
+        if args.collections:
+            FILTER_COLLECTIONS = [c.strip().upper() for c in args.collections.split(",")]
+        if args.chunks:
+            FILTER_CHUNKS = [c.strip() for c in args.chunks.split(",")]
+        if args.layers:
+            FILTER_LAYERS = [l.strip().lower() for l in args.layers.split(",")]
 
 
 def get_or_create_collection(name: str, parent_collection: bpy.types.Collection | None = None) -> bpy.types.Collection:
@@ -377,6 +420,15 @@ def get_or_create_collection(name: str, parent_collection: bpy.types.Collection 
         else:
             bpy.context.scene.collection.children.link(coll)
     return coll
+
+
+def purge_collection_objects(coll: bpy.types.Collection):
+    """Cleanly purges objects in collection before re-import to guarantee zero .001 duplications."""
+    for obj in list(coll.objects):
+        mesh_data = obj.data if obj.type == "MESH" else None
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if mesh_data and mesh_data.users == 0:
+            bpy.data.meshes.remove(mesh_data)
 
 
 def configure_viewport():
@@ -412,7 +464,276 @@ def consolidate_materials():
                         mats.remove(old_mat)
 
 
+def setup_environment_and_lighting(manifest: dict, root_coll: bpy.types.Collection):
+    style_info = manifest.get("style", {})
+    lighting = style_info.get("lighting")
+    if not lighting:
+        return
+
+    try:
+        env_coll = get_or_create_collection("Environment_Lighting", root_coll)
+
+        # Sun Lamp
+        sun_name = "Sun_Terragen"
+        sun_obj = bpy.data.objects.get(sun_name)
+        if not sun_obj:
+            sun_data = bpy.data.lights.new(name=sun_name, type="SUN")
+            sun_obj = bpy.data.objects.new(name=sun_name, object_data=sun_data)
+            env_coll.objects.link(sun_obj)
+
+        sun_light = sun_obj.data
+        sun_light.energy = float(lighting.get("sun_intensity", 4.0))
+        sun_rgb = lighting.get("sun_color_rgb", [255, 246, 230])
+        sun_light.color = (sun_rgb[0] / 255.0, sun_rgb[1] / 255.0, sun_rgb[2] / 255.0)
+
+        az_rad = math.radians(float(lighting.get("sun_azimuth_deg", 55.0)))
+        el_rad = math.radians(float(lighting.get("sun_elevation_deg", 48.0)))
+        sun_obj.rotation_euler = (math.pi / 2.0 - el_rad, 0.0, az_rad)
+
+        if bpy.context.scene.world and bpy.context.scene.world.use_nodes:
+            nodes = bpy.context.scene.world.node_tree.nodes
+            bg_node = nodes.get("Background")
+            if bg_node:
+                sky_rgb = lighting.get("ambient_sky_color_rgb", [175, 205, 235])
+                bg_node.inputs["Color"].default_value = (
+                    sky_rgb[0] / 255.0,
+                    sky_rgb[1] / 255.0,
+                    sky_rgb[2] / 255.0,
+                    1.0,
+                )
+                bg_node.inputs["Strength"].default_value = float(lighting.get("ambient_intensity", 0.5))
+        print("✔ Initialized environment lighting & atmosphere (Sun + Ambient Sky).")
+    except Exception as exc:
+        print(f"Notice: Could not setup lighting: {exc}")
+
+
+def import_world_dressing_instances(
+    manifest: dict,
+    script_dir: Path,
+    coll_veg: bpy.types.Collection,
+    coll_props: bpy.types.Collection,
+    coll_ref: bpy.types.Collection,
+) -> int:
+    dressing_meta = manifest.get("world_dressing")
+    if not dressing_meta:
+        return 0
+
+    manifest_rel = dressing_meta.get("manifest")
+    if not manifest_rel:
+        return 0
+
+    dressing_file = script_dir / manifest_rel
+    if not dressing_file.exists():
+        return 0
+
+    try:
+        data = json.loads(dressing_file.read_text(encoding="utf-8"))
+        prototypes_data = data.get("prototypes", [])
+        collections_data = data.get("collections", {})
+
+        if not collections_data:
+            return 0
+
+        # Prototype asset storage under REFERENCE
+        proto_coll = get_or_create_collection("Assets_Prototypes", coll_ref)
+        proto_coll.hide_render = True
+
+        loaded_protos: dict[str, bpy.types.Object] = {}
+        for p in prototypes_data:
+            p_id = p.get("id")
+            p_rel = p.get("file")
+            if not p_id or not p_rel:
+                continue
+            p_path = script_dir / p_rel
+            if not p_path.exists():
+                continue
+
+            proto_name = f"Proto_{p_id}"
+            existing = bpy.data.objects.get(proto_name)
+            if existing:
+                loaded_protos[p_id] = existing
+                continue
+
+            pre = set(bpy.data.objects)
+            bpy.ops.import_scene.gltf(filepath=str(p_path))
+            new_objs = [o for o in bpy.data.objects if o not in pre]
+            if new_objs:
+                proto_obj = new_objs[0]
+                proto_obj.name = proto_name
+                for c in list(proto_obj.users_collection):
+                    c.objects.unlink(proto_obj)
+                proto_coll.objects.link(proto_obj)
+                loaded_protos[p_id] = proto_obj
+
+        # Purge existing instances before re-import for idempotency
+        purge_collection_objects(coll_veg)
+        purge_collection_objects(coll_props)
+
+        total_spawned = 0
+        for coll_name, inst_list in collections_data.items():
+            is_nature = coll_name.lower().startswith("nature")
+            parent_dest = coll_veg if is_nature else coll_props
+            sub_coll = get_or_create_collection(coll_name, parent_dest)
+            purge_collection_objects(sub_coll)
+
+            for inst in inst_list:
+                p_id = inst.get("prototype_id")
+                proto_obj = loaded_protos.get(p_id)
+                if not proto_obj or not proto_obj.data:
+                    continue
+
+                pos = inst.get("position", [0, 0, 0])
+                rot_deg = inst.get("rotation_euler_deg", [0, 0, 0])
+                scl = inst.get("scale", [1, 1, 1])
+                inst_id = inst.get("id", f"inst_{total_spawned}")
+
+                inst_obj = bpy.data.objects.new(name=f"{p_id}_{inst_id}", object_data=proto_obj.data)
+                inst_obj.location = (pos[0], -pos[2], pos[1])
+                inst_obj.rotation_euler = (
+                    math.radians(rot_deg[0]),
+                    math.radians(rot_deg[2]),
+                    math.radians(rot_deg[1]),
+                )
+                inst_obj.scale = (scl[0], scl[2], scl[1])
+                inst_obj["terragen_id"] = inst_id
+                inst_obj["terragen_prototype"] = p_id
+                inst_obj["terragen_category"] = "nature" if is_nature else "prop"
+                sub_coll.objects.link(inst_obj)
+                total_spawned += 1
+
+        print(f"✔ Instanced {total_spawned} world dressing objects across VEGETATION and PROPS.")
+        return total_spawned
+    except Exception as exc:
+        print(f"Notice: World dressing import: {exc}")
+        return 0
+
+
+def import_collision_meshes(manifest: dict, script_dir: Path, coll_collision: bpy.types.Collection) -> int:
+    col_info = manifest.get("collision")
+    if not col_info:
+        return 0
+
+    purge_collection_objects(coll_collision)
+    total_col = 0
+
+    for col_type, rel_file in col_info.items():
+        if not rel_file:
+            continue
+        file_path = script_dir / rel_file
+        if not file_path.exists():
+            continue
+
+        pre_objs = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=str(file_path))
+        new_objs = [obj for obj in bpy.data.objects if obj not in pre_objs]
+
+        for obj in new_objs:
+            obj.name = f"Collision_{col_type.capitalize()}"
+            obj.display_type = "WIRE"
+            obj["terragen_id"] = f"col_{col_type}"
+            obj["terragen_layer"] = "collision"
+            for c in list(obj.users_collection):
+                if c != coll_collision:
+                    c.objects.unlink(obj)
+            if obj.name not in coll_collision.objects:
+                coll_collision.objects.link(obj)
+            total_col += 1
+
+    print(f"✔ Imported {total_col} collision objects into COLLISION collection (wireframe).")
+    return total_col
+
+
+def import_lod_meshes(manifest: dict, script_dir: Path, coll_lod: bpy.types.Collection) -> int:
+    lod_info = manifest.get("lod")
+    if not lod_info:
+        return 0
+
+    total_lod = 0
+    for lod_key, lod_files in lod_info.items():
+        lod_suffix = lod_key.lower().replace("lod", "").strip("_")
+        sub_name = f"LOD_{lod_suffix}" if lod_suffix else lod_key.upper()
+        sub_lod_coll = get_or_create_collection(sub_name, coll_lod)
+        purge_collection_objects(sub_lod_coll)
+
+        for name, rel_file in lod_files.items():
+            if not rel_file:
+                continue
+            file_path = script_dir / rel_file
+            if not file_path.exists():
+                continue
+
+            pre_objs = set(bpy.data.objects)
+            bpy.ops.import_scene.gltf(filepath=str(file_path))
+            new_objs = [obj for obj in bpy.data.objects if obj not in pre_objs]
+
+            for obj in new_objs:
+                obj.name = f"{name.capitalize()}_{lod_key.upper()}"
+                obj["terragen_id"] = f"{name}_{lod_key}"
+                obj["terragen_lod"] = lod_key
+                for c in list(obj.users_collection):
+                    if c != sub_lod_coll:
+                        c.objects.unlink(obj)
+                if obj.name not in sub_lod_coll.objects:
+                    sub_lod_coll.objects.link(obj)
+                total_lod += 1
+
+    print(f"✔ Imported {total_lod} LOD variants into LOD collection.")
+    return total_lod
+
+
+def setup_reference_elements(manifest: dict, coll_ref: bpy.types.Collection):
+    purge_collection_objects(coll_ref)
+
+    # 1. World Origin Empty Marker
+    origin_obj = bpy.data.objects.get("World_Origin")
+    if not origin_obj:
+        origin_obj = bpy.data.objects.new("World_Origin", None)
+        origin_obj.empty_display_type = "ARROWS"
+        origin_obj.empty_display_size = 50.0  # 50 meters
+        coll_ref.objects.link(origin_obj)
+
+    coords = manifest.get("coordinates", {})
+    w_orig = coords.get("world_origin", {})
+    origin_obj["world_origin_lat"] = float(w_orig.get("lat", 0.0))
+    origin_obj["world_origin_lon"] = float(w_orig.get("lon", 0.0))
+    origin_obj["elevation_ref"] = float(w_orig.get("altitude") or 0.0)
+    origin_obj["project_name"] = manifest.get("project_name", "")
+    origin_obj["export_timestamp"] = manifest.get("export_timestamp", "")
+    origin_obj["units"] = "1 Blender unit = 1.0 meter"
+
+    # 2. Chunk Grid Boundaries
+    ref_info = manifest.get("reference", {})
+    chunks_grid = ref_info.get("chunks_grid", [])
+    if chunks_grid:
+        grid_coll = get_or_create_collection("Chunk_Bounds", coll_ref)
+        purge_collection_objects(grid_coll)
+        for ch in chunks_grid:
+            ch_id = ch.get("id")
+            bp = ch.get("bounds", {})
+            if not bp:
+                continue
+            min_x, max_x = bp.get("min_x", 0.0), bp.get("max_x", 0.0)
+            min_y, max_y = bp.get("min_y", 0.0), bp.get("max_y", 0.0)
+            cx = (min_x + max_x) / 2.0
+            cz = (min_y + max_y) / 2.0
+            sx = (max_x - min_x)
+            sz = (max_y - min_y)
+
+            ch_box = bpy.data.objects.new(f"Bound_{ch_id}", None)
+            ch_box.empty_display_type = "CUBE"
+            ch_box.location = (cx, -cz, 0.0)
+            ch_box.scale = (sx / 2.0, sz / 2.0, 50.0)
+            ch_box["terragen_chunk_id"] = ch_id
+            ch_box["terragen_row"] = ch.get("row")
+            ch_box["terragen_col"] = ch.get("col")
+            grid_coll.objects.link(ch_box)
+
+    print("✔ Initialized REFERENCE collection (World Origin Empty + Chunk Grid Bounds).")
+
+
 def import_terragen_scene():
+    parse_cli_args()
+
     script_dir = Path(__file__).resolve().parent
     manifest_file = script_dir / "blender_manifest.json"
     if not manifest_file.exists():
@@ -423,22 +744,60 @@ def import_terragen_scene():
     project_name = manifest.get("project_name", "Terragen_World")
     export_mode = manifest.get("export_mode", "layer")
     print("=" * 70)
-    print(f"Terragen Blender Importer: {project_name}")
+    print(f"Terragen Professional Blender Importer: {project_name}")
     print(f"Export Mode: {export_mode}")
     print(f"World Origin: Lat {manifest['coordinates']['world_origin']['lat']:.5f}, Lon {manifest['coordinates']['world_origin']['lon']:.5f}")
     print("=" * 70)
 
     configure_viewport()
 
-    root_coll = get_or_create_collection(f"Terragen_{project_name}")
+    # 1. Setup Root WORLD Collection
+    world_root = get_or_create_collection("WORLD")
+    # Also ensure legacy name link for backward compatibility
+    legacy_coll = get_or_create_collection(f"Terragen_{project_name}", world_root)
+
+    # 2. Setup standard 9 studio collections
+    coll_terrain = get_or_create_collection("TERRAIN", world_root)
+    coll_roads = get_or_create_collection("ROADS", world_root)
+    coll_buildings = get_or_create_collection("BUILDINGS", world_root)
+    coll_water = get_or_create_collection("WATER", world_root)
+    coll_vegetation = get_or_create_collection("VEGETATION", world_root)
+    coll_props = get_or_create_collection("PROPS", world_root)
+    coll_collision = get_or_create_collection("COLLISION", world_root)
+    coll_collision.hide_render = True
+    coll_lod = get_or_create_collection("LOD", world_root)
+    coll_lod.hide_render = True
+    coll_lod.hide_viewport = True
+    coll_reference = get_or_create_collection("REFERENCE", world_root)
+    coll_reference.hide_render = True
+
     total_objects_imported = 0
     missing_files: list[str] = []
 
+    def get_dest_collection_for_layer(layer_str: str) -> bpy.types.Collection:
+        l = layer_str.lower()
+        if "terrain" in l:
+            return coll_terrain
+        elif "road" in l or "sidewalk" in l:
+            return coll_roads
+        elif "building" in l:
+            return coll_buildings
+        elif "water" in l:
+            return coll_water
+        elif "vegetation" in l or "tree" in l or "bush" in l:
+            return coll_vegetation
+        return coll_props
+
+    # 3. Import Layers
     if export_mode == "layer" or "layers" in manifest:
         layers_data = manifest.get("layers", [])
         for item in layers_data:
             layer_name = item.get("name", "layer")
             if FILTER_LAYERS and layer_name.lower() not in [l.lower() for l in FILTER_LAYERS]:
+                continue
+
+            dest_coll = get_dest_collection_for_layer(layer_name)
+            if FILTER_COLLECTIONS and dest_coll.name not in FILTER_COLLECTIONS:
                 continue
 
             rel_file = item.get("file")
@@ -450,23 +809,36 @@ def import_terragen_scene():
                 print(f"Warning: Missing layer file: {rel_file}")
                 continue
 
-            layer_coll = get_or_create_collection(f"Layer_{layer_name.capitalize()}", root_coll)
+            # Idempotent purge of existing layer object
+            layer_obj_name = f"Layer_{layer_name.capitalize()}"
+            existing_obj = bpy.data.objects.get(layer_obj_name)
+            if existing_obj:
+                old_mesh = existing_obj.data if existing_obj.type == "MESH" else None
+                bpy.data.objects.remove(existing_obj, do_unlink=True)
+                if old_mesh and old_mesh.users == 0:
+                    bpy.data.meshes.remove(old_mesh)
 
-            # Record objects before import
             pre_objs = set(bpy.data.objects)
             bpy.ops.import_scene.gltf(filepath=str(layer_path))
             new_objs = [obj for obj in bpy.data.objects if obj not in pre_objs]
 
             for obj in new_objs:
-                for c in obj.users_collection:
-                    if c != layer_coll:
+                obj.name = layer_obj_name
+                obj["terragen_id"] = f"layer_{layer_name}"
+                obj["terragen_layer"] = layer_name
+                for c in list(obj.users_collection):
+                    if c != dest_coll:
                         c.objects.unlink(obj)
-                if obj.name not in layer_coll.objects:
-                    layer_coll.objects.link(obj)
+                if obj.name not in dest_coll.objects:
+                    dest_coll.objects.link(obj)
+                # Also link to legacy collection for backwards compatibility
+                if obj.name not in legacy_coll.objects:
+                    legacy_coll.objects.link(obj)
                 total_objects_imported += 1
 
-            print(f"✔ Imported Layer: {layer_name} ({len(new_objs)} objects)")
+            print(f"✔ Imported Layer: {layer_name} into collection '{dest_coll.name}'")
 
+    # 4. Import Chunks
     if export_mode == "chunk" or "chunks" in manifest:
         chunks_data = manifest.get("chunks", [])
         for ch in chunks_data:
@@ -474,37 +846,80 @@ def import_terragen_scene():
             if FILTER_CHUNKS and chunk_id not in FILTER_CHUNKS:
                 continue
 
-            chunk_coll = get_or_create_collection(f"Chunk_{chunk_id}", root_coll)
             files = ch.get("files", {})
-
             for l_name, rel_file in files.items():
                 if not (rel_file.endswith(".glb") or rel_file.endswith(".gltf")):
                     continue
                 if FILTER_LAYERS and l_name.lower() not in [l.lower() for l in FILTER_LAYERS]:
                     continue
+
+                dest_coll = get_dest_collection_for_layer(l_name)
+                if FILTER_COLLECTIONS and dest_coll.name not in FILTER_COLLECTIONS:
+                    continue
+
                 file_path = script_dir / rel_file
                 if not file_path.exists():
                     missing_files.append(str(rel_file))
                     continue
+
+                chunk_obj_name = f"{chunk_id}_{l_name}"
+                existing_obj = bpy.data.objects.get(chunk_obj_name)
+                if existing_obj:
+                    old_mesh = existing_obj.data if existing_obj.type == "MESH" else None
+                    bpy.data.objects.remove(existing_obj, do_unlink=True)
+                    if old_mesh and old_mesh.users == 0:
+                        bpy.data.meshes.remove(old_mesh)
 
                 pre_objs = set(bpy.data.objects)
                 bpy.ops.import_scene.gltf(filepath=str(file_path))
                 new_objs = [obj for obj in bpy.data.objects if obj not in pre_objs]
 
                 for obj in new_objs:
-                    for c in obj.users_collection:
-                        if c != chunk_coll:
+                    obj.name = chunk_obj_name
+                    obj["terragen_id"] = f"{chunk_id}_{l_name}"
+                    obj["terragen_chunk"] = chunk_id
+                    for c in list(obj.users_collection):
+                        if c != dest_coll:
                             c.objects.unlink(obj)
-                    if obj.name not in chunk_coll.objects:
-                        chunk_coll.objects.link(obj)
+                    if obj.name not in dest_coll.objects:
+                        dest_coll.objects.link(obj)
+                    if obj.name not in legacy_coll.objects:
+                        legacy_coll.objects.link(obj)
                     total_objects_imported += 1
 
             print(f"✔ Imported Chunk: {chunk_id}")
 
+    # 5. Import Collision, LOD, and Reference
+    if not FILTER_COLLECTIONS or "COLLISION" in FILTER_COLLECTIONS:
+        import_collision_meshes(manifest, script_dir, coll_collision)
+
+    if not FILTER_COLLECTIONS or "LOD" in FILTER_COLLECTIONS:
+        import_lod_meshes(manifest, script_dir, coll_lod)
+
+    if not FILTER_COLLECTIONS or "REFERENCE" in FILTER_COLLECTIONS:
+        setup_reference_elements(manifest, coll_reference)
+
+    # 6. Setup Lighting and World Dressing
+    setup_environment_and_lighting(manifest, world_root)
+
+    total_dressed = 0
+    if not FILTER_COLLECTIONS or ("VEGETATION" in FILTER_COLLECTIONS or "PROPS" in FILTER_COLLECTIONS):
+        total_dressed = import_world_dressing_instances(
+            manifest,
+            script_dir,
+            coll_veg=coll_vegetation,
+            coll_props=coll_props,
+            coll_ref=coll_reference,
+        )
+
+    # 7. Shader & Material Consolidation
     consolidate_materials()
 
     print("=" * 70)
-    print(f"Terragen Import Complete: {total_objects_imported} objects placed in collection '{root_coll.name}'.")
+    print(
+        f"Terragen Import Complete: {total_objects_imported} objects and {total_dressed} instanced dressing props "
+        f"organized under 'WORLD' ({legacy_coll.name})."
+    )
     if missing_files:
         print(f"Warnings: {len(missing_files)} missing files reported.")
     print("=" * 70)
@@ -650,7 +1065,7 @@ class BlenderExportPipeline:
         parsed_glbs = 0
         for glb in glb_files:
             try:
-                res = validate_glb_file(glb)
+                validate_glb_file(glb)
                 parsed_glbs += 1
             except Exception as e:
                 report.errors.append(f"Corrupt or invalid GLB file '{glb.name}': {e}")
@@ -737,7 +1152,9 @@ class BlenderExportPipeline:
             dem = ModifiedDem(base_dem=dem, editor=editor, proj=self.proj)
 
         # 3. Style preset resolution
+        from .styles import get_style_preset
         preset_name = opts.style_preset or getattr(self.project.generation, "style_preset", "stylized_european_town")
+        preset = get_style_preset(preset_name)
 
         # Master manifest dictionary
         manifest: dict[str, Any] = {
@@ -763,6 +1180,19 @@ class BlenderExportPipeline:
                 "size_y": float(self.project.dimensions.size_y_m or 2000.0),
                 "chunk_size": float(self.project.chunks.grid.chunk_size_m or 512.0),
             },
+            "style": {
+                "preset_id": preset.preset_id if preset else "default",
+                "name": preset.name if preset else "Default",
+                "description": preset.description if preset else "",
+                "lighting": preset.lighting.to_dict() if preset and getattr(preset, "lighting", None) else None,
+                "materials": {
+                    "terrain": {"roughness": preset.terrain.roughness, "metallic": preset.terrain.metallic} if preset and getattr(preset, "terrain", None) else None,
+                    "building": {"roughness": preset.building.roughness, "metallic": preset.building.metallic} if preset and getattr(preset, "building", None) else None,
+                    "roads": {"roughness": preset.roads.roughness, "metallic": preset.roads.metallic} if preset and getattr(preset, "roads", None) else None,
+                    "water": {"roughness": preset.water.roughness, "metallic": preset.water.metallic} if preset and getattr(preset, "water", None) else None,
+                    "vegetation": {"roughness": 0.90, "metallic": 0.0},
+                },
+            },
             "layers": [],
             "chunks": [],
         }
@@ -780,6 +1210,63 @@ class BlenderExportPipeline:
             }
             gj_path.write_text(json.dumps(gj_doc, indent=2), encoding="utf-8")
             manifest["regions_geojson"] = str(gj_path.relative_to(out_path))
+
+        # 4.b Export Procedural Biome Distribution and Splatmaps
+        biomes_dir = out_path / "biomes"
+        biomes_dir.mkdir(parents=True, exist_ok=True)
+        from .biomes import BiomeGenerator, generate_splatmap_textures
+
+        dim_x = float(self.project.dimensions.size_x_m or 2000.0)
+        dim_y = float(self.project.dimensions.size_y_m or 2000.0)
+        size_m = dim_x
+        half_x = dim_x / 2.0
+        half_y = dim_y / 2.0
+
+        biome_gen = BiomeGenerator(seed=self.project.seed)
+        biome_res = biome_gen.evaluate_grid(
+            bounds_m=(-half_x, -half_y, half_x, half_y),
+            resolution_m=max(10.0, dim_x / opts.terrain_res),
+            dem=dem,
+            proj=self.proj,
+            ways=ways,
+        )
+
+        biome_export_meta = generate_splatmap_textures(
+            biome_res,
+            biomes_dir,
+            stem=f"{self.project.name}_biome",
+        )
+
+        manifest["biomes"] = {
+            "coverage_percentages": biome_export_meta["coverage"],
+            "splatmap_0": str(Path(biome_export_meta["splatmap_file"]).relative_to(out_path)),
+            "colormap": str(Path(biome_export_meta["colormap_file"]).relative_to(out_path)),
+            "manifest": str(Path(biome_export_meta["manifest_file"]).relative_to(out_path)),
+            "channels": biome_export_meta["channels"],
+        }
+
+        # 4.c Procedural World Dressing Instancing
+        from .dressing import WorldDressingEngine, export_world_dressing_for_blender
+        dressing_engine = WorldDressingEngine(seed=self.project.seed)
+        instances = dressing_engine.populate_bounds(
+            bounds_m=(-half_x, -half_y, half_x, half_y),
+            dem=dem,
+            proj=self.proj,
+            biome_grid=biome_res,
+            ways=ways,
+        )
+        dressing_export_meta = export_world_dressing_for_blender(
+            instances=instances,
+            catalog=dressing_engine.catalog,
+            output_dir=out_path,
+            stem=f"{self.project.name}_world_dressing",
+        )
+        manifest["world_dressing"] = {
+            "total_instances": dressing_export_meta["total_instances"],
+            "manifest": str(Path(dressing_export_meta["manifest_file"]).relative_to(out_path)),
+            "category_counts": dressing_export_meta["category_counts"],
+            "collections": dressing_export_meta["collections"],
+        }
 
         # 5. Export 16-Bit Heightmap
         if opts.include_heightmap:
@@ -849,6 +1336,21 @@ class BlenderExportPipeline:
 
             tex_bytes = facade_png()
 
+            def _get_pbr_for_layer(layer_key: str) -> tuple[float, float]:
+                if not preset:
+                    return 0.92, 0.0
+                if layer_key == "terrain" and getattr(preset, "terrain", None):
+                    return float(preset.terrain.roughness), float(preset.terrain.metallic)
+                elif layer_key == "buildings" and getattr(preset, "building", None):
+                    return float(preset.building.roughness), float(preset.building.metallic)
+                elif layer_key in ("roads", "sidewalks") and getattr(preset, "roads", None):
+                    return float(preset.roads.roughness), float(preset.roads.metallic)
+                elif layer_key == "water" and getattr(preset, "water", None):
+                    return float(preset.water.roughness), float(preset.water.metallic)
+                elif layer_key == "vegetation":
+                    return 0.90, 0.0
+                return 0.92, 0.0
+
             for l_name, mesh in export_meshes.items():
                 if len(mesh.f) == 0:
                     continue
@@ -856,12 +1358,15 @@ class BlenderExportPipeline:
                     continue
 
                 glb_file = layers_dir / f"{l_name}.glb"
+                rough, metal = _get_pbr_for_layer(l_name)
                 write_glb(
                     mesh,
                     glb_file,
                     name=l_name.capitalize(),
                     texture_png=tex_bytes if l_name == "buildings" else None,
                     material_name=f"mat_{l_name}",
+                    roughness=rough,
+                    metallic=metal,
                 )
 
                 layer_info = {
@@ -879,6 +1384,116 @@ class BlenderExportPipeline:
                     layer_info["obj_file"] = str(obj_file.relative_to(out_path))
 
                 manifest["layers"].append(layer_info)
+
+        # 6.b Collision Geometry Generation
+        collision_dir = out_path / "collision"
+        collision_dir.mkdir(parents=True, exist_ok=True)
+        from .build import CityBuilder, building_height
+        from .geom import box as geom_box
+
+        b_col = CityBuilder(
+            ways=ways or [],
+            proj=self.proj,
+            dem=dem,
+            size_m=size_m,
+            terrain_res=min(opts.terrain_res // 4, 32),
+            seed=self.project.seed,
+            roofs=False,
+            style_preset=preset_name,
+        )
+        terrain_col_mesh = b_col.build_terrain()
+        terrain_col_glb = collision_dir / "terrain_collision.glb"
+        write_glb(terrain_col_mesh, terrain_col_glb, name="Terrain_Collision", material_name="mat_collision")
+
+        bld_col_mesh = Mesh()
+        for w in (ways or []):
+            tags = getattr(w, "tags", {})
+            if "building" not in tags and "building:part" not in tags:
+                continue
+            if tags.get("building") == "no":
+                continue
+            coords = getattr(w, "coords", [])
+            if len(coords) < 3:
+                continue
+            c_arr = np.asarray(coords, dtype=np.float64)
+            w_x, w_y = self.proj.to_xy(c_arr[:, 0], c_arr[:, 1])
+            min_x, max_x = float(w_x.min()), float(w_x.max())
+            min_z, max_z = float(w_y.min()), float(w_y.max())
+            cx = (min_x + max_x) / 2.0
+            cz = (min_z + max_z) / 2.0
+            w_box = max(1.0, max_x - min_x)
+            d_box = max(1.0, max_z - min_z)
+
+            lon_c, lat_c = self.proj.to_lonlat(cx, cz)
+            base_elev = float(np.asarray(dem.heights(np.array([lon_c]), np.array([lat_c]))).ravel()[0])
+            h = building_height(tags, getattr(w, "id", 0), self.project.seed)
+
+            v_b, f_b = geom_box(cx, cz, w_box, d_box, base_elev, base_elev + h)
+            bld_col_mesh.add(v_b, f_b)
+
+        bld_col_glb = collision_dir / "buildings_collision.glb"
+        if len(bld_col_mesh.f) > 0:
+            write_glb(bld_col_mesh, bld_col_glb, name="Buildings_Collision", material_name="mat_collision")
+
+        manifest["collision"] = {
+            "terrain": str(terrain_col_glb.relative_to(out_path)),
+            "buildings": str(bld_col_glb.relative_to(out_path)) if len(bld_col_mesh.f) > 0 else None,
+        }
+
+        # 6.c LOD Variants Generation
+        lod_dir = out_path / "lod"
+        lod_dir.mkdir(parents=True, exist_ok=True)
+
+        b_lod1 = CityBuilder(
+            ways=ways or [],
+            proj=self.proj,
+            dem=dem,
+            size_m=size_m,
+            terrain_res=min(opts.terrain_res // 2, 64),
+            seed=self.project.seed,
+            roofs=True,
+            style_preset=preset_name,
+        )
+        terrain_lod1_mesh = b_lod1.build_terrain()
+        terrain_lod1_glb = lod_dir / "terrain_lod1.glb"
+        write_glb(terrain_lod1_mesh, terrain_lod1_glb, name="Terrain_LOD1", material_name="mat_terrain_lod1")
+
+        b_lod2 = CityBuilder(
+            ways=ways or [],
+            proj=self.proj,
+            dem=dem,
+            size_m=size_m,
+            terrain_res=16,
+            seed=self.project.seed,
+            roofs=False,
+            style_preset=preset_name,
+        )
+        terrain_lod2_mesh = b_lod2.build_terrain()
+        terrain_lod2_glb = lod_dir / "terrain_lod2.glb"
+        write_glb(terrain_lod2_mesh, terrain_lod2_glb, name="Terrain_LOD2", material_name="mat_terrain_lod2")
+
+        manifest["lod"] = {
+            "lod1": {
+                "terrain": str(terrain_lod1_glb.relative_to(out_path)),
+            },
+            "lod2": {
+                "terrain": str(terrain_lod2_glb.relative_to(out_path)),
+            },
+        }
+
+        manifest["reference"] = {
+            "world_origin": manifest["coordinates"]["world_origin"],
+            "dimensions_m": manifest["dimensions_m"],
+            "chunks_grid": [
+                {
+                    "id": ch.id,
+                    "row": ch.row,
+                    "col": ch.col,
+                    "bounds": ch.bounds_projected,
+                }
+                for ch in self.project.chunks.items
+            ],
+        }
 
         # 7. Mode 2: Chunk Mode Export
         if opts.mode in ("chunk", "both"):
@@ -899,7 +1514,7 @@ class BlenderExportPipeline:
                 c_dir.mkdir(parents=True, exist_ok=True)
 
                 # Generate chunk
-                ch_manifest = engine.generate_chunk(
+                engine.generate_chunk(
                     ch.id,
                     dem=dem,
                     ways=ways,

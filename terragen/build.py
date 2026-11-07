@@ -257,6 +257,11 @@ class CityBuilder:
         X, Y = np.meshgrid(xs, ys)  # X: est, Y: nord
         lon, lat = self.proj.to_lonlat(X, Y)
         Z = self.dem.heights(np.asarray(lon), np.asarray(lat))
+        if self.style_preset and (self.style_preset.terrain.elevation_scale != 1.0 or self.style_preset.terrain.elevation_offset_m != 0.0):
+            scale = self.style_preset.terrain.elevation_scale
+            offset = self.style_preset.terrain.elevation_offset_m
+            zmin_raw = float(Z.min())
+            Z = (Z - zmin_raw) * scale + zmin_raw + offset
         self.terrain_z = Z.astype(np.float64)
 
         # vârfuri (x=Est, y=Sus, z=Nord)
@@ -302,8 +307,16 @@ class CityBuilder:
 
         colors = np.clip(col, 0, 255).astype(np.uint8)
 
+        # Normale analitice pe relief din derivatele pantei
+        nx = -gx.ravel()
+        ny = np.ones_like(nx)
+        nz = -gy.ravel()
+        n_len = np.sqrt(nx**2 + ny**2 + nz**2)
+        n_len[n_len == 0] = 1.0
+        terrain_normals = np.column_stack([nx / n_len, ny / n_len, nz / n_len])
+
         m = Mesh()
-        m.add(verts, faces, colors)
+        m.add(verts, faces, colors, normals=terrain_normals)
         self.stats["terrain_elev_range"] = [round(zmin, 1), round(zmax, 1)]
         return m
 
@@ -719,6 +732,8 @@ class CityBuilder:
         from .styles import generate_vegetation_layer
 
         bbox_m = (-self.half, -self.half, self.half, self.half)
+        elev_scale = self.style_preset.terrain.elevation_scale if self.style_preset else 1.0
+        elev_offset = self.style_preset.terrain.elevation_offset_m if self.style_preset else 0.0
         return generate_vegetation_layer(
             bbox_m=bbox_m,
             dem=self.dem,
@@ -729,4 +744,6 @@ class CityBuilder:
             water_polygons=getattr(self, "_water_polys", None),
             road_polygons=getattr(self, "_road_polys", None),
             building_polygons=getattr(self, "_building_polys", None),
+            elevation_scale=elev_scale,
+            elevation_offset_m=elev_offset,
         )

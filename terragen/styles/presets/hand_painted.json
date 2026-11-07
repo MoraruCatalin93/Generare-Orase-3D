@@ -1,0 +1,103 @@
+{
+  "name": "hand_painted",
+  "label": "Hand Painted",
+  "description": "Painterly storybook aesthetic with warm saturated hues, gouache matte finishes, and fairy-tale lighting.",
+  "version": "1.0.0",
+  "building": {
+    "simplification_tol": 0.50,
+    "min_area": 12.0,
+    "height_scale": 1.08,
+    "height_variation": 0.25,
+    "roof_overhang": 0.55,
+    "roof_ridge_scale": 1.15,
+    "ground_floor_darkening": 0.82,
+    "add_chimneys": true,
+    "roof_styles": [
+      "gable",
+      "hipped"
+    ],
+    "facade_palette": [
+      [245, 232, 208],
+      [230, 212, 182],
+      [218, 190, 165],
+      [205, 165, 140]
+    ],
+    "roof_palette": [
+      [195, 82, 60],
+      [165, 70, 55],
+      [72, 115, 90],
+      [60, 95, 125]
+    ],
+    "roughness": 0.92,
+    "metallic": 0.0
+  },
+  "vegetation": {
+    "enabled": true,
+    "density_per_ha": 35.0,
+    "forest_density_per_ha": 160.0,
+    "tree_types": [
+      "deciduous",
+      "pine"
+    ],
+    "foliage_palette": [
+      [82, 170, 68],
+      [105, 192, 75],
+      [60, 145, 78],
+      [135, 205, 85]
+    ],
+    "trunk_palette": [
+      [115, 75, 48],
+      [95, 60, 38]
+    ],
+    "scale_min": 0.75,
+    "scale_max": 1.45,
+    "max_slope_deg": 36.0,
+    "exclude_roads_buffer_m": 2.5,
+    "exclude_buildings_buffer_m": 2.0
+  },
+  "terrain": {
+    "elevation_scale": 1.18,
+    "elevation_offset_m": 0.0,
+    "low_color": [115, 185, 80],
+    "mid_color": [150, 195, 95],
+    "high_color": [185, 175, 130],
+    "rock_color": [115, 105, 125],
+    "peak_color": [240, 235, 245],
+    "slope_threshold_deg": 18.0,
+    "slope_blend_range_deg": 16.0,
+    "roughness": 0.95,
+    "metallic": 0.0
+  },
+  "roads": {
+    "asphalt_color": [74, 76, 82],
+    "sidewalk_color": [172, 162, 150],
+    "track_color": [152, 130, 105],
+    "width_scale": 1.0,
+    "roughness": 0.88,
+    "metallic": 0.01
+  },
+  "water": {
+    "color": [55, 145, 190],
+    "opacity": 0.88,
+    "surface_offset_m": -0.30,
+    "roughness": 0.15,
+    "metallic": 0.02
+  },
+  "lighting": {
+    "sun_azimuth_deg": 62.0,
+    "sun_elevation_deg": 38.0,
+    "sun_color": [255, 235, 195],
+    "sun_intensity": 3.8,
+    "ambient_color": [195, 205, 240],
+    "sky_horizon_color": [225, 220, 245],
+    "sky_zenith_color": [130, 155, 225],
+    "fog_enabled": true,
+    "fog_density": 0.0005,
+    "fog_color": [220, 225, 245]
+  },
+  "material": {
+    "roughness": 0.92,
+    "metallic": 0.0
+  }
+}
+

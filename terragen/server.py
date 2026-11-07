@@ -37,6 +37,7 @@ PROJECTS_DIR = Path(os.environ.get("TERRAGEN_PROJECTS", Path.cwd() / "projects")
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
 from .projects import ProjectManager  # noqa: E402
+
 project_manager = ProjectManager(PROJECTS_DIR)
 PROJECT_MGR = project_manager
 
@@ -63,9 +64,8 @@ def protect_browser_requests():
         or (request.path.endswith("/export/blender") and "/projects/" in request.path)
         or ("/terrain/" in request.path and (request.path.endswith("/undo") or request.path.endswith("/redo") or request.path.endswith("/export")))
     )
-    if request.method == "POST" and not is_exempt:
-        if not request.is_json:
-            return jsonify({"error": "este necesar Content-Type application/json"}), 415
+    if request.method == "POST" and not is_exempt and not request.is_json:
+        return jsonify({"error": "este necesar Content-Type application/json"}), 415
     return None
 
 CONFIG: dict = {"pbf": None, "default_size": 1200.0, "terrain_res": 256}
@@ -1083,6 +1083,82 @@ def api_projects_export_blender(pid: str):
             "export_dir": res.get("export_dir"),
             "pre_validation": res.get("pre_validation"),
             "post_validation": res.get("post_validation"),
+        })
+    except FileNotFoundError:
+        return jsonify({"error": "proiect inexistent"}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+# -------------------------------------------------------------------------
+# Game World Editor Endpoints (Etapa 5)
+# -------------------------------------------------------------------------
+
+@app.get("/api/projects/<pid>/files/<path:f>")
+def api_projects_get_file(pid: str, f: str):
+    """Servește în siguranță fișierele generate ale proiectului (GLB, PNG, JSON)."""
+    try:
+        project_dir = project_manager._resolve_project_dir(pid)
+    except FileNotFoundError:
+        return jsonify({"error": "proiect inexistent"}), 404
+    target = (project_dir / f).resolve()
+    if not target.is_relative_to(project_dir) or not target.is_file():
+        abort(404)
+    return send_file(target)
+
+
+@app.get("/api/projects/<pid>/world-state")
+def api_projects_world_state(pid: str):
+    """Returnează starea agregată a lumii pentru Game World Editor."""
+    try:
+        engine = project_manager.get_chunk_engine(pid)
+        p = engine.project
+        items = p.chunks.items
+        grid = p.chunks.grid
+        return jsonify({
+            "project_id": pid,
+            "name": p.name,
+            "slug": p.slug,
+            "center": {
+                "lat": p.geographic.center_lat,
+                "lon": p.geographic.center_lon,
+                "elevation_ref": p.geographic.elevation_ref,
+            },
+            "dimensions": {
+                "size_x_m": p.dimensions.size_x_m,
+                "size_y_m": p.dimensions.size_y_m,
+                "chunk_size_m": grid.chunk_size_m,
+                "rows": grid.rows,
+                "cols": grid.cols,
+            },
+            "style_preset": getattr(p.generation, "style_preset", "stylized_realistic"),
+            "dressing_density": getattr(p.generation, "dressing_density_multiplier", 1.0),
+            "chunks_count": len(items),
+            "chunks": [it.to_dict() for it in items],
+            "regions": [r.to_dict() for r in p.regions],
+        })
+    except FileNotFoundError:
+        return jsonify({"error": "proiect inexistent"}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/projects/<pid>/world-settings")
+def api_projects_world_settings(pid: str):
+    """Actualizează parametrii de stil și densitate ai lumii."""
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        engine = project_manager.get_chunk_engine(pid)
+        p = engine.project
+        if "style_preset" in d:
+            p.generation.style_preset = str(d["style_preset"])
+        if "dressing_density" in d:
+            p.generation.dressing_density_multiplier = float(d["dressing_density"])
+        project_manager.save_project(p)
+        return jsonify({
+            "ok": True,
+            "style_preset": getattr(p.generation, "style_preset", "stylized_realistic"),
+            "dressing_density": getattr(p.generation, "dressing_density_multiplier", 1.0),
         })
     except FileNotFoundError:
         return jsonify({"error": "proiect inexistent"}), 404

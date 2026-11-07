@@ -1,0 +1,194 @@
+{
+  "name": "stylized_rural",
+  "label": "Stylized Rural",
+  "description": "Quiet countryside landscape with rustic farmhouses, hay-colored roofs, and winding dirt paths.",
+  "version": "1.0.0",
+  "building": {
+    "simplification_tol": 1.2,
+    "min_area": 16.0,
+    "height_scale": 0.9,
+    "height_variation": 0.25,
+    "roof_overhang": 0.6,
+    "roof_ridge_scale": 1.2,
+    "ground_floor_darkening": 0.8,
+    "add_chimneys": true,
+    "roof_styles": [
+      "gable"
+    ],
+    "facade_palette": [
+      [
+        220,
+        205,
+        175
+      ],
+      [
+        195,
+        178,
+        150
+      ],
+      [
+        168,
+        142,
+        118
+      ],
+      [
+        210,
+        190,
+        165
+      ]
+    ],
+    "roof_palette": [
+      [
+        185,
+        125,
+        68
+      ],
+      [
+        160,
+        105,
+        55
+      ],
+      [
+        150,
+        75,
+        50
+      ]
+    ],
+    "roughness": 0.88,
+    "metallic": 0.01
+  },
+  "vegetation": {
+    "enabled": true,
+    "density_per_ha": 35.0,
+    "forest_density_per_ha": 180.0,
+    "tree_types": [
+      "deciduous",
+      "pine"
+    ],
+    "foliage_palette": [
+      [
+        78,
+        155,
+        62
+      ],
+      [
+        96,
+        172,
+        74
+      ],
+      [
+        118,
+        185,
+        85
+      ]
+    ],
+    "trunk_palette": [
+      [
+        95,
+        68,
+        45
+      ]
+    ],
+    "scale_min": 0.8,
+    "scale_max": 1.45,
+    "max_slope_deg": 35.0,
+    "exclude_roads_buffer_m": 2.5,
+    "exclude_buildings_buffer_m": 2.0
+  },
+  "terrain": {
+    "elevation_scale": 1.0,
+    "elevation_offset_m": 0.0,
+    "low_color": [
+      140,
+      185,
+      95
+    ],
+    "mid_color": [
+      170,
+      198,
+      110
+    ],
+    "high_color": [
+      182,
+      175,
+      135
+    ],
+    "rock_color": [
+      128,
+      122,
+      112
+    ],
+    "peak_color": null,
+    "slope_threshold_deg": 22.0,
+    "slope_blend_range_deg": 16.0,
+    "roughness": 0.9,
+    "metallic": 0.0
+  },
+  "roads": {
+    "asphalt_color": [
+      90,
+      85,
+      78
+    ],
+    "sidewalk_color": [
+      155,
+      145,
+      130
+    ],
+    "track_color": [
+      140,
+      125,
+      102
+    ],
+    "width_scale": 0.92,
+    "roughness": 0.85,
+    "metallic": 0.02
+  },
+  "water": {
+    "color": [
+      68,
+      150,
+      168
+    ],
+    "opacity": 0.8,
+    "surface_offset_m": -0.28,
+    "roughness": 0.18,
+    "metallic": 0.02
+  },
+  "lighting": {
+    "sun_azimuth_deg": 65.0,
+    "sun_elevation_deg": 38.0,
+    "sun_color": [
+      255,
+      240,
+      218
+    ],
+    "sun_intensity": 3.6,
+    "ambient_color": [
+      190,
+      210,
+      225
+    ],
+    "sky_horizon_color": [
+      225,
+      235,
+      245
+    ],
+    "sky_zenith_color": [
+      125,
+      168,
+      220
+    ],
+    "fog_enabled": true,
+    "fog_density": 0.0012,
+    "fog_color": [
+      215,
+      228,
+      238
+    ]
+  },
+  "material": {
+    "roughness": 0.85,
+    "metallic": 0.02
+  }
+}

@@ -1,0 +1,199 @@
+{
+  "name": "stylized_forest",
+  "label": "Stylized Forest",
+  "description": "Deep wilderness canopy with emerald moss tones, dense conifers, and dark slate riverbeds.",
+  "version": "1.0.0",
+  "building": {
+    "simplification_tol": 1.0,
+    "min_area": 14.0,
+    "height_scale": 0.95,
+    "height_variation": 0.3,
+    "roof_overhang": 0.55,
+    "roof_ridge_scale": 1.15,
+    "ground_floor_darkening": 0.78,
+    "add_chimneys": true,
+    "roof_styles": [
+      "gable"
+    ],
+    "facade_palette": [
+      [
+        175,
+        152,
+        128
+      ],
+      [
+        150,
+        130,
+        108
+      ],
+      [
+        190,
+        172,
+        145
+      ]
+    ],
+    "roof_palette": [
+      [
+        95,
+        115,
+        90
+      ],
+      [
+        72,
+        85,
+        70
+      ],
+      [
+        128,
+        88,
+        62
+      ]
+    ],
+    "roughness": 0.85,
+    "metallic": 0.02
+  },
+  "vegetation": {
+    "enabled": true,
+    "density_per_ha": 65.0,
+    "forest_density_per_ha": 260.0,
+    "tree_types": [
+      "pine",
+      "deciduous"
+    ],
+    "foliage_palette": [
+      [
+        42,
+        122,
+        58
+      ],
+      [
+        52,
+        138,
+        68
+      ],
+      [
+        35,
+        105,
+        50
+      ],
+      [
+        68,
+        150,
+        75
+      ]
+    ],
+    "trunk_palette": [
+      [
+        75,
+        52,
+        35
+      ],
+      [
+        90,
+        62,
+        42
+      ]
+    ],
+    "scale_min": 0.85,
+    "scale_max": 1.55,
+    "max_slope_deg": 38.0,
+    "exclude_roads_buffer_m": 2.0,
+    "exclude_buildings_buffer_m": 2.0
+  },
+  "terrain": {
+    "elevation_scale": 1.05,
+    "elevation_offset_m": 0.0,
+    "low_color": [
+      95,
+      148,
+      75
+    ],
+    "mid_color": [
+      122,
+      162,
+      88
+    ],
+    "high_color": [
+      145,
+      150,
+      115
+    ],
+    "rock_color": [
+      108,
+      110,
+      105
+    ],
+    "peak_color": null,
+    "slope_threshold_deg": 18.0,
+    "slope_blend_range_deg": 14.0,
+    "roughness": 0.88,
+    "metallic": 0.0
+  },
+  "roads": {
+    "asphalt_color": [
+      70,
+      72,
+      75
+    ],
+    "sidewalk_color": [
+      140,
+      138,
+      130
+    ],
+    "track_color": [
+      120,
+      105,
+      88
+    ],
+    "width_scale": 0.95,
+    "roughness": 0.8,
+    "metallic": 0.03
+  },
+  "water": {
+    "color": [
+      45,
+      115,
+      135
+    ],
+    "opacity": 0.88,
+    "surface_offset_m": -0.32,
+    "roughness": 0.14,
+    "metallic": 0.03
+  },
+  "lighting": {
+    "sun_azimuth_deg": 70.0,
+    "sun_elevation_deg": 44.0,
+    "sun_color": [
+      245,
+      245,
+      230
+    ],
+    "sun_intensity": 3.4,
+    "ambient_color": [
+      160,
+      195,
+      205
+    ],
+    "sky_horizon_color": [
+      195,
+      218,
+      225
+    ],
+    "sky_zenith_color": [
+      100,
+      145,
+      195
+    ],
+    "fog_enabled": true,
+    "fog_density": 0.002,
+    "fog_color": [
+      180,
+      205,
+      215
+    ]
+  },
+  "material": {
+    "roughness": 0.85,
+    "metallic": 0.03
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "name": "post_apocalyptic",
+  "label": "Post Apocalyptic",
+  "description": "Weathered ruin and parched wasteland with crumbling concrete, rust-colored tiles, hardy weeds, and ochre haze.",
+  "version": "1.0.0",
+  "building": {
+    "simplification_tol": 0.50,
+    "min_area": 10.0,
+    "height_scale": 1.05,
+    "height_variation": 0.40,
+    "roof_overhang": 0.40,
+    "roof_ridge_scale": 1.10,
+    "ground_floor_darkening": 0.80,
+    "add_chimneys": false,
+    "roof_styles": [
+      "flat",
+      "gable"
+    ],
+    "facade_palette": [
+      [148, 142, 134],
+      [128, 122, 115],
+      [158, 120, 95],
+      [112, 108, 102]
+    ],
+    "roof_palette": [
+      [145, 78, 52],
+      [120, 70, 48],
+      [85, 92, 82],
+      [95, 90, 85]
+    ],
+    "roughness": 0.90,
+    "metallic": 0.12
+  },
+  "vegetation": {
+    "enabled": true,
+    "density_per_ha": 22.0,
+    "forest_density_per_ha": 110.0,
+    "tree_types": [
+      "deciduous",
+      "pine"
+    ],
+    "foliage_palette": [
+      [92, 128, 65],
+      [112, 138, 72],
+      [132, 135, 78],
+      [78, 108, 62]
+    ],
+    "trunk_palette": [
+      [92, 80, 68],
+      [78, 68, 58]
+    ],
+    "scale_min": 0.70,
+    "scale_max": 1.35,
+    "max_slope_deg": 34.0,
+    "exclude_roads_buffer_m": 2.0,
+    "exclude_buildings_buffer_m": 1.8
+  },
+  "terrain": {
+    "elevation_scale": 1.18,
+    "elevation_offset_m": 0.0,
+    "low_color": [128, 142, 88],
+    "mid_color": [145, 140, 105],
+    "high_color": [158, 145, 128],
+    "rock_color": [110, 108, 104],
+    "peak_color": [220, 218, 212],
+    "slope_threshold_deg": 20.0,
+    "slope_blend_range_deg": 14.0,
+    "roughness": 0.94,
+    "metallic": 0.02
+  },
+  "roads": {
+    "asphalt_color": [82, 80, 78],
+    "sidewalk_color": [145, 140, 135],
+    "track_color": [135, 122, 105],
+    "width_scale": 0.95,
+    "roughness": 0.92,
+    "metallic": 0.02
+  },
+  "water": {
+    "color": [55, 82, 70],
+    "opacity": 0.90,
+    "surface_offset_m": -0.30,
+    "roughness": 0.22,
+    "metallic": 0.04
+  },
+  "lighting": {
+    "sun_azimuth_deg": 65.0,
+    "sun_elevation_deg": 35.0,
+    "sun_color": [255, 230, 195],
+    "sun_intensity": 3.6,
+    "ambient_color": [185, 182, 175],
+    "sky_horizon_color": [215, 205, 185],
+    "sky_zenith_color": [120, 135, 155],
+    "fog_enabled": true,
+    "fog_density": 0.0012,
+    "fog_color": [195, 188, 175]
+  },
+  "material": {
+    "roughness": 0.92,
+    "metallic": 0.05
+  }
+}
+

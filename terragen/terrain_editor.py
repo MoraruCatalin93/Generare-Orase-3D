@@ -121,9 +121,15 @@ class TerrainModifier:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TerrainModifier:
-        c = data.get("center", {})
-        cx = float(c.get("x", data.get("center_x", 0.0)))
-        cy = float(c.get("y", data.get("center_y", 0.0)))
+        c = data.get("center")
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            cx, cy = float(c[0]), float(c[1])
+        elif isinstance(c, dict):
+            cx = float(c.get("x", data.get("center_x", 0.0)))
+            cy = float(c.get("y", data.get("center_y", 0.0)))
+        else:
+            cx = float(data.get("center_x", 0.0))
+            cy = float(data.get("center_y", 0.0))
         return cls(
             id=str(data.get("id", uuid.uuid4().hex[:8])),
             op=str(data.get("op", "raise_lower")),

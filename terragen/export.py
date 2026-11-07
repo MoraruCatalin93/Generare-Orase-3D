@@ -38,6 +38,8 @@ def write_glb(
     name: str | None = None,
     texture_png: bytes | None = None,
     material_name: str | None = None,
+    roughness: float = 0.92,
+    metallic: float = 0.0,
 ) -> int:
     """Scriitor GLB minimal: POSITION, NORMAL, COLOR_0, TEXCOORD_0 (+ textură opțională).
 
@@ -51,8 +53,18 @@ def write_glb(
 
     v = mesh.v.copy()
     v[:, 2] *= -1.0
-    faces = mesh.f
-    normals = _vertex_normals(v, faces)
+    faces = mesh.f[:, [0, 2, 1]] if len(mesh.f) else mesh.f.copy()
+
+    if getattr(mesh, "n", None) is not None and len(mesh.n) == len(v) and np.any(mesh.n != 0):
+        normals = mesh.n.copy()
+        normals[:, 2] *= -1.0
+        zero_mask = np.linalg.norm(normals, axis=1) < 1e-6
+        if np.any(zero_mask):
+            auto_n = _vertex_normals(v, faces)
+            normals[zero_mask] = auto_n[zero_mask]
+    else:
+        normals = _vertex_normals(v, faces)
+
     colors = _srgb_to_linear(
         mesh.c if len(mesh.c) == len(v) else np.full((len(v), 4), 255, np.uint8)
     )
@@ -99,10 +111,10 @@ def write_glb(
         "name": material_name or ((name or path.stem) + "_mat"),
         "pbrMetallicRoughness": {
             "baseColorFactor": [1, 1, 1, 1],
-            "metallicFactor": 0.0,
-            "roughnessFactor": 0.92,
+            "metallicFactor": float(metallic),
+            "roughnessFactor": float(roughness),
         },
-        "doubleSided": True,
+        "doubleSided": False,
     }
     attrs = {"POSITION": i_pos, "NORMAL": i_nrm, "COLOR_0": i_col, "TEXCOORD_0": i_uv}
     prim = {"attributes": attrs, "indices": i_idx, "mode": 4, "material": 0}

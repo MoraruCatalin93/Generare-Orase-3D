@@ -1,0 +1,103 @@
+{
+  "name": "dark_fantasy",
+  "label": "Dark Fantasy",
+  "description": "Ominous gothic atmosphere with towering peaks, cold basalt stone, desaturated vegetation, and heavy low mist.",
+  "version": "1.0.0",
+  "building": {
+    "simplification_tol": 0.40,
+    "min_area": 10.0,
+    "height_scale": 1.25,
+    "height_variation": 0.35,
+    "roof_overhang": 0.35,
+    "roof_ridge_scale": 1.30,
+    "ground_floor_darkening": 0.75,
+    "add_chimneys": true,
+    "roof_styles": [
+      "gable",
+      "pyramid"
+    ],
+    "facade_palette": [
+      [125, 122, 118],
+      [105, 102, 98],
+      [88, 85, 82],
+      [142, 136, 128]
+    ],
+    "roof_palette": [
+      [55, 58, 65],
+      [45, 48, 52],
+      [75, 52, 45],
+      [62, 65, 70]
+    ],
+    "roughness": 0.88,
+    "metallic": 0.08
+  },
+  "vegetation": {
+    "enabled": true,
+    "density_per_ha": 18.0,
+    "forest_density_per_ha": 120.0,
+    "tree_types": [
+      "pine",
+      "deciduous"
+    ],
+    "foliage_palette": [
+      [42, 75, 48],
+      [35, 62, 42],
+      [52, 68, 50],
+      [38, 55, 40]
+    ],
+    "trunk_palette": [
+      [58, 45, 36],
+      [48, 38, 30]
+    ],
+    "scale_min": 0.70,
+    "scale_max": 1.50,
+    "max_slope_deg": 38.0,
+    "exclude_roads_buffer_m": 2.5,
+    "exclude_buildings_buffer_m": 2.0
+  },
+  "terrain": {
+    "elevation_scale": 1.35,
+    "elevation_offset_m": 0.0,
+    "low_color": [75, 95, 65],
+    "mid_color": [95, 105, 80],
+    "high_color": [115, 112, 105],
+    "rock_color": [80, 82, 88],
+    "peak_color": [210, 215, 225],
+    "slope_threshold_deg": 18.0,
+    "slope_blend_range_deg": 12.0,
+    "roughness": 0.92,
+    "metallic": 0.05
+  },
+  "roads": {
+    "asphalt_color": [55, 58, 62],
+    "sidewalk_color": [135, 132, 128],
+    "track_color": [112, 105, 95],
+    "width_scale": 0.95,
+    "roughness": 0.90,
+    "metallic": 0.04
+  },
+  "water": {
+    "color": [38, 65, 78],
+    "opacity": 0.95,
+    "surface_offset_m": -0.35,
+    "roughness": 0.18,
+    "metallic": 0.08
+  },
+  "lighting": {
+    "sun_azimuth_deg": 78.0,
+    "sun_elevation_deg": 24.0,
+    "sun_color": [240, 205, 175],
+    "sun_intensity": 2.8,
+    "ambient_color": [120, 130, 155],
+    "sky_horizon_color": [145, 150, 170],
+    "sky_zenith_color": [65, 75, 105],
+    "fog_enabled": true,
+    "fog_density": 0.0018,
+    "fog_color": [135, 142, 155]
+  },
+  "material": {
+    "roughness": 0.90,
+    "metallic": 0.06
+  }
+}
+
