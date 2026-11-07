@@ -430,16 +430,23 @@
           sel.appendChild(opt);
         });
       }
+      const saved = localStorage.getItem('terragen_active_project_id');
+      if (saved && data.projects?.some(p => p.id === saved)) {
+        sel.value = saved;
+        loadRegionsForProject(saved);
+      }
     } catch (_) {}
   }
 
   async function loadRegionsForProject(pid) {
     if (!pid) {
       activeProjectId = '';
+      localStorage.removeItem('terragen_active_project_id');
       el('projectSyncStatus').textContent = 'Local (Browser)';
       loadFromLocalStorage();
       return;
     }
+    localStorage.setItem('terragen_active_project_id', pid);
     try {
       message('Încărcare regiuni din proiect...');
       const res = await fetch(`/api/projects/${pid}/regions`);

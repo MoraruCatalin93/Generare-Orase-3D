@@ -5,74 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Region Editor · Terragen</title>
   <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="/ui/theme.css">
   <link rel="stylesheet" href="/ui/style.css">
-  <style>
-    #map { position: fixed; inset: 0 380px 0 0; }
-    #panel {
-      position: fixed; top: 0; right: 0; bottom: 0; width: 380px;
-      background: var(--panel); border-left: 1px solid var(--line);
-      overflow-y: auto; padding: 14px 16px 24px; backdrop-filter: blur(12px);
-    }
-    .hud {
-      position: absolute; bottom: 16px; left: 16px; z-index: 10;
-      background: rgba(14, 17, 22, 0.88); border: 1px solid var(--line);
-      border-radius: 10px; padding: 10px 14px; font-size: 12px;
-      backdrop-filter: blur(8px); display: flex; gap: 16px; align-items: center;
-      color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-    }
-    .hud-metric { display: flex; flex-direction: column; }
-    .hud-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
-    .hud-val { font-size: 13px; font-weight: 600; color: var(--accent); }
-    .hud-warn { color: var(--warn) !important; font-weight: 600; }
-    .actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-    .actions button, .actions .btn { flex: 1 1 auto; font-size: 12px; padding: 7px 9px; }
-    .type-badge {
-      display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase;
-      padding: 2px 6px; border-radius: 4px; color: #fff; vertical-align: middle;
-    }
-    .color-swatch {
-      width: 14px; height: 14px; border-radius: 3px; display: inline-block;
-      vertical-align: middle; margin-right: 6px; border: 1px solid rgba(255,255,255,0.3);
-    }
-    .zone-card {
-      background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
-      padding: 10px; margin: 8px 0; transition: border-color 0.15s, background 0.15s;
-    }
-    .zone-card:hover { border-color: #3f5063; }
-    .zone-card.selected { border-color: var(--accent); background: #1f2a36; }
-    .zone-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-    .zone-meta { font-size: 11px; color: var(--dim); margin-top: 4px; display: flex; justify-content: space-between; }
-    .zone-actions { display: flex; gap: 4px; margin-top: 8px; }
-    .zone-actions button { font-size: 11px; padding: 4px 8px; border-radius: 6px; }
-    .mode-bar {
-      display: flex; gap: 4px; background: #10161e; padding: 3px; border-radius: 8px;
-      border: 1px solid var(--line); margin-bottom: 10px;
-    }
-    .mode-btn {
-      flex: 1; font-size: 11px; padding: 6px 4px; border: none; background: transparent;
-      color: var(--dim); border-radius: 6px; cursor: pointer; text-align: center;
-    }
-    .mode-btn.active { background: var(--panel-2); color: var(--accent); font-weight: 600; }
-    .conflict-box {
-      background: #2a1b1a; border: 1px solid #7c312d; border-radius: 6px;
-      padding: 8px; font-size: 11px; color: #ff9b94; margin: 6px 0;
-    }
-    .status-pill {
-      font-size: 9px; text-transform: uppercase; padding: 1px 5px; border-radius: 3px;
-      background: #283340; color: #adbccc;
-    }
-    .status-built { background: #164332; color: #4ee0a9; }
-    .status-generating { background: #4a3b1a; color: #ffd269; }
-    .status-error { background: #4a1e1b; color: #ff8882; }
-    @media (max-width: 800px) {
-      #map { inset: 0 0 50%; }
-      #panel { top: 50%; width: 100%; height: 50%; border-left: none; border-top: 1px solid var(--line); }
-      .hud { bottom: auto; top: 12px; left: 12px; }
-    }
-  </style>
 </head>
 <body>
-  <div id="map"></div>
+  <nav class="app-nav" aria-label="Navigare principală">
+    <a href="/">🗺 Hartă</a>
+    <a href="/ui/zone-draw.html" class="active" aria-current="page">⬡ Zone</a>
+    <a href="/ui/terrain.html">⛰ Teren</a>
+    <a href="/ui/export.html">📦 Export</a>
+    <a href="/viewer/">👁 Viewer</a>
+  </nav>
+
+  <div id="map" class="map-wide-panel"></div>
 
   <!-- Real-time Metrics HUD -->
   <div class="hud" id="hud">
@@ -90,20 +35,20 @@
     </div>
   </div>
 
-  <aside id="panel">
+  <aside id="panel" class="panel-wide">
     <header>
       <div class="logo">Terragen <span>Region Editor</span></div>
-      <a class="btn" href="/" style="padding:4px 8px; font-size:11px;">← Generator</a>
+      <a class="btn btn-sm" href="/">← Generator</a>
     </header>
 
     <!-- Project Selector -->
     <section>
       <div class="label">Proiect Activ <span id="projectSyncStatus">Local</span></div>
-      <div style="display:flex; gap:6px;">
+      <div class="project-selector-row">
         <select id="projectSelect">
           <option value="">Fără proiect (stocare browser / fișier)</option>
         </select>
-        <button id="refreshProjects" title="Reîncarcă lista de proiecte" style="padding:6px 10px;">↻</button>
+        <button id="refreshProjects" class="btn-sm" title="Reîncarcă lista de proiecte">↻</button>
       </div>
     </section>
 
@@ -150,7 +95,7 @@
         </div>
         <div>
           <label for="zoneColor">Culoare</label>
-          <input type="color" id="zoneColor" value="#e74c3c" style="height:32px; padding:2px 4px; cursor:pointer;">
+          <input type="color" id="zoneColor" class="color-picker-input" value="#e74c3c">
         </div>
       </div>
 
@@ -182,14 +127,14 @@
         <label><input type="checkbox" id="zoneVisible" checked> Vizibil pe hartă</label>
       </div>
 
-      <div class="actions" style="margin-top:12px;">
-        <button id="save" disabled class="accent" style="font-weight:600;">Salvează regiunea</button>
+      <div class="actions actions-mt-12">
+        <button id="save" disabled class="accent">Salvează regiunea</button>
         <button id="duplicateBtn" disabled>Duplică</button>
-        <button id="deleteBtn" disabled style="color:#ff9b94;">Șterge</button>
+        <button id="deleteBtn" disabled class="danger">Șterge</button>
       </div>
 
       <div class="actions">
-        <button id="generateRegionBtn" disabled style="background:#1b3d30; border-color:#2a7b5d; color:#4ee0a9; width:100%;">
+        <button id="generateRegionBtn" disabled class="btn-go wide">
           ⚡ Generează 3D pentru această regiune
         </button>
       </div>
@@ -222,7 +167,7 @@
       </div>
     </section>
 
-    <div id="status" class="hint" role="status" style="margin-top:10px; min-height:28px;"></div>
+    <div id="status" class="hint status-hint-box" role="status"></div>
   </aside>
 
   <script src="/vendor/maplibre-gl.js"></script>

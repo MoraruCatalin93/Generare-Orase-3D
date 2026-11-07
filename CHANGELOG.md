@@ -4,6 +4,24 @@ Toate schimbările notabile ale proiectului. Formatul urmează
 [Keep a Changelog](https://keepachangelog.com/ro/1.1.0/), versiunile
 [SemVer](https://semver.org/lang/ro/).
 
+## [2.1.2] — 2026-11-07
+
+### Unificare și optimizare pipeline generare
+- **Unificare motor de generare**: conectat fluxul de generare simplu (`cli.generate`) cu cel bazat pe proiecte (`ProjectManager` și `GenerationService`).
+- **Suport relief sculptat**: modificatorii aplicați în editorul de teren (`TerrainEditor`) se propagă automat prin `ModifiedDem` în modelele 3D finale (teren, drumuri, clădiri) și în heightmap.
+- **Eliminat cod duplicat**: `ChunkEngine` reutilizează funcțiile partajate din `terragen/build.py` (`building_height`, `building_color`, `road_width`), asigurând aspect vizual identic între bucățile de lume (chunk-uri) și întreaga hartă.
+- **Păstrat formatul compatibil**: fișierele și structura din `sites/` rămân 100% neschimbate, compatibile cu viewer-ul 3D.
+- **Suită de teste**: 169 de teste automate active, toate verzi.
+
+## [2.1.1] — 2026-11-07
+
+### Corectat și actualizat (Documentație)
+- **Eliminat contradicțiile legate de Blender**: Actualizat documentația pentru a reflecta pipeline-ul dedicat de export pentru Blender (Layer Mode, Chunk Mode, script importator autonom `import_to_blender.py`, colecții și deduplicare de materiale).
+- **Corectat pașii de pornire în `CUM-INCEPI.md`**: Eliminat referințele către fișiere inexistente (`terragen-setup.sh`, `terragen-run.sh`, `terragen-web.zip`); rescris ghidul pas cu pas pe baza fluxului real din `README.md` (`git clone` și `./start.sh` / `.\start.ps1`).
+- **Corectat numărul de teste în toate documentele**: Actualizat la numărul real verificat de **163 de teste** automate (100% offline).
+- **Linkuri relative în `docs/DEVELOPER_GUIDE.md`**: Înlocuit toate legăturile absolute de tip `file:///Users/morarucatalin/...` cu căi relative portabile (`../terragen/...`).
+- **Actualizat structura modulelor în `README.md`**: Documentat noile subsisteme (`blender_export.py`, `terrain_editor.py`, `styles.py`, `projects/`, `services/`) și clarificat suportul pentru vegetație procedurală stilizată.
+
 ## [2.1.0] — 2026-11-06
 
 ### Adăugat

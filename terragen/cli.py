@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .build import CityBuilder
@@ -72,6 +73,9 @@ def generate(
     log=None,
     is_cancelled=None,
     style_preset: Any = None,
+    dem: Any = None,
+    project_id: str | None = None,
+    projects_dir: str | Path | None = None,
 ):
     """Generează straturile 3D și scrie manifestul. Returnează manifestul (dict)."""
     log = log or (lambda msg: print(msg, flush=True))
@@ -87,6 +91,16 @@ def generate(
     out.mkdir(parents=True, exist_ok=True)
     proj = LocalProjection(lat0, lon0)
     bbox = proj.bbox_of_square(size * 1.05)
+
+    if project_id and style_preset is None:
+        try:
+            from .projects.manager import ProjectManager
+            _pm = ProjectManager(projects_dir)
+            _proj = _pm.open_project(project_id)
+            if hasattr(_proj, "generation") and getattr(_proj.generation, "style_preset", None):
+                style_preset = _proj.generation.style_preset
+        except Exception:
+            pass
 
     if ways is None:
         src = "Overpass API" if (overpass or not pbf) else f"fișier local {Path(pbf).name}"
@@ -118,11 +132,33 @@ def generate(
 
     check_cancelled()
     log(f"[2/6] Relief — DEM zoom {dem_zoom} …")
-    dem = Dem(bbox, zoom=dem_zoom)
+    if dem is None:
+        dem = Dem(bbox, zoom=dem_zoom)
     log(
         f"      mozaic {dem.mosaic.shape[1]}×{dem.mosaic.shape[0]} px, "
         f"~{dem.meters_per_pixel(lat0):.1f} m/pixel"
     )
+
+    if project_id:
+        try:
+            from .projects.manager import ProjectManager
+            _pm = ProjectManager(projects_dir)
+            _proj = _pm.open_project(project_id)
+            if _proj.terrain.modifiers:
+                from .terrain_editor import ModifiedDem, TerrainEditor
+                _editor = TerrainEditor.from_dict(
+                    {
+                        "modifiers": _proj.terrain.modifiers,
+                        "undo_stack": _proj.terrain.undo_stack,
+                    },
+                    base_dem=dem,
+                    proj=proj,
+                    regions=_proj.regions,
+                )
+                dem = ModifiedDem(base_dem=dem, editor=_editor, proj=proj)
+                log(f"      aplicat {len(_proj.terrain.modifiers)} modificatori de relief din proiect")
+        except Exception as _e:
+            log(f"      [avertisment] Nu s-au putut aplica modificatorii de teren: {_e}")
 
     check_cancelled()
     b = CityBuilder(

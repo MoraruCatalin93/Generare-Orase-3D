@@ -1,14 +1,16 @@
+@import "./theme.css";
+
 :root {
-  --bg: #0e1116;
-  --panel: #141920f2;
-  --panel-2: #1a212a;
-  --line: #27313d;
-  --text: #e9eef4;
-  --dim: #8fa0b2;
-  --accent: #35d0a5;
-  --accent-2: #2bb48f;
-  --warn: #e0b062;
-  --radius: 12px;
+  --bg: var(--color-bg);
+  --panel: var(--color-surface);
+  --panel-2: var(--color-surface-elevated);
+  --line: var(--color-border);
+  --text: var(--color-text);
+  --dim: var(--color-text-secondary);
+  --accent: var(--color-accent);
+  --accent-2: var(--color-accent-hover);
+  --warn: var(--color-warning);
+  --radius: var(--radius-xl);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden;

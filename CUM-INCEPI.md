@@ -1,123 +1,106 @@
-# terragen-web — cum începi (macOS + VS Code)
+# Terragen World Builder — Cum începi (Ghid rapid)
 
-**Ce e:** selectezi o zonă pe hartă → apeși un buton → primești orașul 3D (teren cu relief, drumuri,
-trotuare, clădiri cu acoperișuri și ferestre) și îl vezi **în browser**, fără Unity, fără Blender.
-Exportul e GLB standard, bun pentru orice engine.
+**Ce este Terragen:** selectezi o zonă pe hartă → apeși un buton → primești orașul și terenul 3D (relief cu altitudini reale, drumuri drapate, trotuare, clădiri cu fațade și acoperișuri stilizate, vegetație) și îl vezi **direct în browser**. De asemenea, poți exporta pachete complete optimizate pentru **Blender** și pregătite pentru **Unity**.
 
 ---
 
-## Fișierele din folderul de descărcări
+## Pași de pornire (sub 2 minute)
 
-| fișier | ce faci cu el |
+Nu ai nevoie de arhive separate sau scripturi de instalare externe. Totul se rulează direct din repository-ul Git.
+
+### 1. Clonează proiectul și intră în folder
+
+Deschide terminalul (sau VS Code → `Terminal → New Terminal`) și rulează:
+
+```bash
+git clone https://github.com/MoraruCatalin93/Generare-Orase-3D.git
+cd Generare-Orase-3D
+```
+
+### 2. Pornește aplicația
+
+- **Pe macOS sau Linux:**
+  ```bash
+  ./start.sh
+  ```
+  *(Dacă primești eroare de permisiuni, rulează `chmod +x start.sh && ./start.sh`)*
+
+- **Pe Windows (PowerShell):**
+  ```powershell
+  .\start.ps1
+  ```
+
+### Ce face scriptul automat:
+1. Verifică prezența Python (3.10+).
+2. Creează automat mediul virtual `.venv` dacă nu există deja.
+3. Instalează toate dependențele necesare din `requirements.txt`.
+4. Pornește serverul local și deschide automat browserul la **http://127.0.0.1:8777**.
+
+---
+
+## Cum folosești aplicația în browser
+
+1. **Harta interactivă**:
+   - Centrată inițial pe Târgu Mureș.
+   - Taste rapide: `t` = comută umbrirea reliefului 3D, `s` = comută pe satelit.
+2. **Selectarea zonei**:
+   - Apasă butonul **„▭ Selectează pe hartă"** și trage un dreptunghi peste zona dorită (sau introdu manual coordonatele și dimensiunea în metri).
+3. **Personalizare și generare**:
+   - Alege rezoluția terenului, seed-ul și stilul dorit.
+   - Apasă **„⬢ Generează orașul 3D"**.
+4. **Vizualizare și export**:
+   - Progresul curge în timp real pe ecran.
+   - La final, apasă **„◱ Deschide viewer 3D"** pentru a naviga prin oraș direct în browser.
+   - Poți exporta scena ca fișiere GLB sau pachete complete pentru Blender prin noul meniu de export.
+
+---
+
+## Datele geografice (OSM) — Online vs. Offline
+
+- **Online (Overpass API)**: Funcționează automat pentru zone mici (1–2 km).
+- **Offline (Recomandat pentru zone mari)**:
+  - Apasă butonul **„⬇ descarcă România (~330 MB)"** din interfață pentru a salva `romania.osm.pbf` în rădăcina proiectului.
+  - Odată descărcat, generarea devine **100% offline** și de aproximativ **10× mai rapidă**.
+
+---
+
+## Comenzi utile din linia de comandă (CLI)
+
+```bash
+# Pornire server manual
+python3 -m terragen serve
+
+# Generare directă din terminal
+python3 -m terragen generate --center targu-mures --size 1500 --out sites/tgm --seed 7
+
+# Rulare teste automate (163 teste offline, rulează în ~3 secunde)
+python3 -m pytest tests -q
+```
+
+---
+
+## Relația cu Blender și Unity
+
+- **Viewer-ul web**: Îți permite să verifici imediat geometria generată direct în browser, fără să deschizi alte programe.
+- **Exportul pentru Blender**: Proiectul include un exportator dedicat (`import_to_blender.py`) care importă automat straturile, configurează vizibilitatea la 50 km și curăță materialele duplicate.
+- **Unity**: Modelele pot fi importate în Unity ca FBX/glTF după pregătirea în Blender, iar fișierele de heightmap pe 16 biți (`.r16`) se pot încărca direct în componenta Unity Terrain.
+
+---
+
+## Dacă întâmpini probleme
+
+| Simptom | Soluție simplă |
 |---|---|
-| **`terragen-setup.sh`** (≈780 KB) | **îl rulezi o dată.** Conține tot proiectul înăuntru (self-extracting). Instalează în `~/terragen-web`, creează `.venv`, instalează dependențele, rulează testele. |
-| **`terragen-run.sh`** (≈2 KB) | pornește aplicația de fiecare dată (fără să instaleze nimic). Găsește singur instalarea. |
-| `terragen-web.zip` (≈1,2 MB) | alternativă: proiectul ca arhivă normală, dacă preferi să-l deschizi direct în VS Code. |
+| `permission denied: ./start.sh` | Rulează `chmod +x start.sh` și apoi `./start.sh` |
+| `python3: command not found` | Instalează Python 3.10 sau mai nou de pe [python.org](https://www.python.org/) sau via `brew install python` |
+| Portul 8777 este ocupat | Pornește pe alt port: `./start.sh --port 8780` |
+| Harta este goală | Asigură-te că ești conectat la internet pentru prima descărcare a tile-urilor hărții |
+| Resetare completă a mediului | Șterge folderul `.venv` (`rm -rf .venv`) și rulează din nou `./start.sh` |
 
 ---
 
-## Pași (2 minute)
+## Licențe și atribuire
 
-### 1. Descarcă `terragen-setup.sh` în `~/Downloads`
-
-### 2. Deschide VS Code → `Terminal → New Terminal` și rulează:
-
-```bash
-cd ~/Downloads
-bash terragen-setup.sh
-```
-
-Ce vei vedea (pe scurt):
-
-```
-▸ caut Python…            ✔ Python 3.12 (/usr/bin/python3)
-▸ despachetez proiectul…  ✔ despachetat (2.5M)
-▸ copiez în /Users/<tu>/terragen-web …
-▸ creez mediul virtual .venv…
-▸ instalez dependențele (1–2 minute prima dată)…  ✔
-▸ verific instalarea…     ✔ teste: 18 passed
-✔ Gata!
-```
-
-> Dacă macOS cere instalarea *Command Line Tools* pentru `python3`, acceptă (sau `brew install python@3.12`).
-
-### 3. Pornește aplicația
-
-```bash
-cd ~/terragen-web
-./start.sh
-```
-
-Se deschide automat **http://127.0.0.1:8777**. (Sau, de oriunde: `bash ~/Downloads/terragen-run.sh`.)
-
-### 4. În aplicație
-
-1. **Harta** — centrată pe Târgu Mureș. Taste: `t` = relief on/off, `s` = satelit.
-2. **„▭ Selectează pe hartă"** → tragi un dreptunghi (sau scrii lat/lon + latura în metri).
-3. Alegi detaliul terenului + seed-ul → **„⬢ Generează orașul 3D"**.
-4. Progresul curge în timp real (6 pași). La final:
-   - **◱ Deschide viewer 3D** — orașul, în browser (umbre, straturi on/off, oră din zi, export PNG);
-   - **⬇ ZIP** — tot folderul, dacă vrei să-l muți;
-   - **📂 folder** — deschide `sites/<nume>/` în Finder.
-
-### 5. Datele OSM (recomandat, o singură dată)
-
-Fără fișier local, aplicația ia datele din **Overpass API** — merge pentru zone de 1–2 km, dar e
-uneori aglomerat (poate dura 30–60 s). Pentru viteză:
-
-- apasă **„⬇ descarcă România (~330 MB)"** în panou — salvează `romania.osm.pbf` în proiect;
-- de atunci generarea e **offline** și de ~10× mai rapidă (prima citire ~2–4 min, apoi cache).
-
----
-
-## Ce iese în `sites/<nume>/`
-
-```
-manifest.json            tot: zonă, sisteme de coordonate, statistici
-glb/terrain.glb          teren cu relief (culori după altitudine/pantă)
-glb/roads.glb            carosabil (mesh, lățimi reale din OSM)
-glb/sidewalks.glb        trotuare, poteci, treceri
-glb/buildings.glb        clădiri + acoperișuri + FERESTRE (textura e în GLB)
-glb/green|forest|water|pitch|parking|industrial|other.glb
-data/roads_network.json  noduri + segmente (trafic / AI / minimap)
-terrain/…257.r16         heightmap 16 biți (dacă vrei Terrain în orice engine)
-```
-
-**Import:** Godot 4 (drag & drop), Unreal (glTF), Blender (`File → Import → glTF 2.0`), three.js
-(`GLTFLoader`), Unity (`glTFast`). 1 unitate = 1 metru, originea = centrul zonei.
-
----
-
-## Comenzi utile (CLI)
-
-```bash
-python3 -m terragen serve                      # aplicația (hartă + generator + viewer)
-python3 -m terragen generate --center cluj --size 1500 --out sites/cluj
-python3 -m terragen generate --center 46.5446,24.5612 --size 800 --seed 42
-python3 -m terragen build --site sites/cluj --out dist    # site static (viewer inclus)
-python3 -m terragen check                      # verifică instalarea
-python3 -m pytest tests -q                     # 18 teste, offline
-```
-
-`./start.sh --port 8780` dacă portul 8777 e ocupat. `Ctrl+C` oprește serverul.
-
----
-
-## Dacă ceva nu merge
-
-| simptom | soluție |
-|---|---|
-| `permission denied: ./start.sh` | `bash start.sh` sau `chmod +x start.sh` |
-| `python3: command not found` | `brew install python@3.12` (sau instalează de pe python.org) |
-| `Port 8777 is in use` | `./start.sh --port 8780` |
-| harta apare goală | e nevoie de internet pentru tile-uri (generarea, după ce ai `.osm.pbf`, merge offline) |
-| „Overpass API" dă erori | descarcă `.osm.pbf`-ul din buton, sau încearcă o zonă mai mică (700–1000 m) |
-| vreau să resetez tot | `rm -rf ~/terragen-web/.venv && ./start.sh` |
-
----
-
-## Licențe
-
-Cod: **MIT**. Datele: © OpenStreetMap contributors (**ODbL**, atribuire obligatorie) · relief:
-Terrarium/AWS. Harta din UI folosește tile-uri OSM publice și, opțional, imagini satelit Esri
-(pentru uz comercial, pune propriul tile server).
+- **Cod sursă**: Licență **MIT** (vezi `LICENSE`).
+- **Date OpenStreetMap**: © OpenStreetMap contributors (licență ODbL).
+- **Date Elevație (DEM)**: Terrarium / AWS Open Data / Mapzen.

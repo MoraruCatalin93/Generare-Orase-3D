@@ -95,10 +95,10 @@ Originea (0, 0, 0) = centrul zonei, la altitudinea reală a terenului. **1 unita
 | engine | cum |
 |---|---|
 | **three.js / Babylon** | `GLTFLoader` — exact ce face viewer-ul din `terragen/web/viewer/` |
-| **Godot 4** | tragi `buildings.glb` în scenă; culori per vertex + textură automate |
+| **Godot 4** | tragi fișierele `.glb` în scenă; culori per vertex + textură automate |
 | **Unreal 5** | import glTF (Interchange) — materiale PBR simple |
-| **Blender** | `File → Import → glTF 2.0`, fără addon-uri |
-| **Unity** | `glTFast` + `buildings.glb` (nu mai e nevoie de shader custom) |
+| **Blender** | Pipeline dedicat de export (`import_to_blender.py` / colecții / materiale deduplicate) sau manual `File → Import → glTF 2.0` |
+| **Unity** | Staging prin Blender (export FBX/glTF) sau `glTFast`; fișierele heightmap 16 biți (`.r16`) se importă direct în componenta Unity Terrain |
 
 ---
 
@@ -109,7 +109,7 @@ python3 -m terragen serve                    # aplicația (hartă + generator + 
 python3 -m terragen generate --center targu-mures --size 1500 --out sites/tgm --seed 7
 python3 -m terragen build --site sites/tgm --out dist    # site static, cu viewer inclus
 python3 -m terragen check                    # verifică instalarea
-python3 -m pytest tests -q                   # teste offline (DEM fals, fără rețea)
+python3 -m pytest tests -q                   # 163 teste offline (DEM fals, fără rețea)
 ```
 
 | opțiune `generate` | default | ce face |
@@ -133,25 +133,30 @@ urcat direct pe Netlify / GitHub Pages / orice hosting static.
 
 ```
 terragen/
-├── project.py    # proiecție locală Transverse Mercator (lon/lat → metri E/N)
-├── dem.py        # tile-uri Terrarium → mozaic de altitudini + eșantionare biliniară
-├── osmdata.py    # citire .osm.pbf (pyosmium / osmium-tool / cititor intern) sau Overpass
-├── pbflite.py    # cititor .osm.pbf în Python pur (fără dependențe)
-├── multipolygon.py # relații OSM `type=multipolygon` → poligoane cu găuri (curți, lacuri)
-├── geom.py       # triangulare (earcut, cu găuri), extrudare cu pereți plați, UV de fațadă
-├── facade.py     # textura de fereastră generată procedural (PNG, o celulă)
-├── build.py      # stilul: lățimi de drum, înălțimi, culori, acoperișuri, straturi
-├── export.py     # GLB (cu textură încorporată), OBJ, heightmap RAW16, graf de drumuri
-├── cli.py        # pipeline-ul de generare
-├── cli_main.py   # punctul de intrare (`serve`, `generate`, `build`, `check`)
-├── site.py       # împachetare ca site static
-├── server.py     # Flask: API + SSE pentru progres + fișiere
+├── project.py          # proiecție locală Transverse Mercator (lon/lat → metri E/N)
+├── dem.py              # tile-uri Terrarium → mozaic de altitudini + eșantionare biliniară
+├── osmdata.py          # citire .osm.pbf (pyosmium / osmium-tool / cititor intern) sau Overpass
+├── pbflite.py          # cititor .osm.pbf în Python pur (fără dependențe)
+├── multipolygon.py     # relații OSM `type=multipolygon` → poligoane cu găuri (curți, lacuri)
+├── geom.py             # triangulare (earcut, cu găuri), extrudare cu pereți plați, UV de fațadă
+├── facade.py           # textura de fereastră generată procedural (PNG, o celulă)
+├── build.py            # generator procedural oraș: relief, drumuri, clădiri, vegetație
+├── export.py           # exportatori GLB, OBJ și heightmap 16 biți (.r16)
+├── blender_export.py   # pipeline profesional de export pentru Blender (Layer & Chunk, script importator)
+├── terrain_editor.py   # editor non-destructiv de teren (pensule, măști, undo/redo, heightmap)
+├── styles.py           # preseturi vizuale stilizate (oraș european, rural, pădure, munte)
+├── projects/           # management de proiecte persistente, regiuni poligonale, motor de chunk-uri
+├── services/           # servicii modulare decuplate de Flask (generare, elevație, export)
+├── cli.py              # pipeline-ul de generare
+├── cli_main.py         # punctul de intrare (`serve`, `generate`, `build`, `check`)
+├── site.py             # împachetare ca site static
+├── server.py           # Flask: API REST + SSE pentru progres + fișiere statice
 └── web/
-    ├── ui/       # harta (MapLibre, local), panoul, selecția zonei
-    └── viewer/   # viewer 3D three.js (local, fără CDN)
+    ├── ui/             # harta (MapLibre, local), panoul, selecția zonei, editor regiuni
+    └── viewer/         # viewer 3D three.js (local, fără CDN)
 ```
 
-Tot ce ține de „stil" e într-un singur loc, în `build.py`: `BASE_WIDTH` (lățimi pe clasă),
+Tot ce ține de „stil" e configurabil prin preseturi în `styles.py` și `build.py`: `BASE_WIDTH` (lățimi pe clasă),
 `HEIGHT_DEFAULTS` (înălțimi pe tip), `BUILDING_PALETTE`, `ROOF_COLORS`, `area_kind()`.
 Modulele de fațadă: `geom.MODULE_U` (3,2 m) și `geom.FLOOR_H` (3,1 m).
 
@@ -160,8 +165,7 @@ Modulele de fațadă: `geom.MODULE_U` (3,2 m) și `geom.FLOOR_H` (3,1 m).
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pip install ruff pytest
-ruff check . && ruff format --check .
+pip install pytest
 pytest -q
 ```
 
@@ -175,7 +179,7 @@ pytest -q
 - **Tuneluri** sărite; **poduri** puse pe teren (pot coborî în albia apei). `bridge=yes` e în JSON.
 - **DEM public ~3–5 m/px** — relief corect la scară de oraș, fără taluzuri fine, diguri, rampe.
 - **Ferestrele sunt textură**, nu geometrie: fără balcoane, jaluzele sau goluri reale în perete.
-- **Fără vegetație individuală** (pădurile sunt poligoane verzi) și fără semafoare/mobilier stradal.
+- **Fără semafoare sau mobilier stradal mărunt** (vegetația și arborii stilizați sunt generați procedural).
 - **Înălțimile lipsesc des în OSM** → valori pe tip + variație din `--seed`.
 
 ## Licență și atribuire

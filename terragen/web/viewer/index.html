@@ -4,59 +4,20 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>terragen — viewer 3D</title>
-<style>
-  :root {
-    --bg: #0e1116; --panel: #151a21e6; --line: #26303c;
-    --text: #e8edf3; --dim: #93a1b1; --accent: #35d0a5;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg);
-               color: var(--text); font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
-  #app { position: fixed; inset: 0; }
-  canvas { display: block; }
-
-  .panel { position: fixed; background: var(--panel); border: 1px solid var(--line);
-           border-radius: 12px; backdrop-filter: blur(10px); box-shadow: 0 10px 30px #0008; }
-
-  #hud { top: 14px; left: 14px; padding: 12px 14px; width: 268px; }
-  #hud h1 { margin: 0 0 2px; font-size: 14px; letter-spacing: .2px; }
-  #hud .sub { color: var(--dim); font-size: 11.5px; margin-bottom: 10px; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-         padding: 3px 0; }
-  .row label { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
-  .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-  .row .tris { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
-  input[type=checkbox] { accent-color: var(--accent); }
-  hr { border: 0; border-top: 1px solid var(--line); margin: 9px 0; }
-  .btn { border: 1px solid var(--line); background: #1c232c; color: var(--text);
-         border-radius: 8px; padding: 5px 9px; font-size: 11.5px; cursor: pointer; }
-  .btn:hover { border-color: var(--accent); color: var(--accent); }
-  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-
-  #stats { bottom: 14px; left: 14px; padding: 8px 12px; color: var(--dim); font-size: 11.5px;
-           font-variant-numeric: tabular-nums; }
-  #stats b { color: var(--text); font-weight: 600; }
-  #hint { bottom: 14px; right: 14px; padding: 8px 12px; color: var(--dim); font-size: 11.5px; }
-  #hint kbd { background: #1c232c; border: 1px solid var(--line); border-radius: 4px;
-              padding: 0 4px; color: var(--text); }
-
-  #loader { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg);
-            z-index: 50; transition: opacity .45s; }
-  #loader.done { opacity: 0; pointer-events: none; }
-  #loader .box { text-align: center; }
-  #loader .bar { width: 220px; height: 3px; background: #222b35; border-radius: 2px;
-                 overflow: hidden; margin: 12px auto 0; }
-  #loader .bar i { display: block; height: 100%; width: 0%; background: var(--accent);
-                   transition: width .25s; }
-  #err { position: fixed; inset: auto 14px 60px 14px; max-width: 640px; margin: auto;
-         padding: 12px 14px; border-radius: 10px; background: #3a1d22; border: 1px solid #7a3038;
-         color: #ffd7db; font-size: 12.5px; display: none; white-space: pre-wrap; }
-</style>
+<link rel="stylesheet" href="theme.css" />
 </head>
 <body>
+<nav class="app-nav" aria-label="Navigare principală">
+  <a href="/">🗺 Hartă</a>
+  <a href="/ui/zone-draw.html">⬡ Zone</a>
+  <a href="/ui/terrain.html">⛰ Teren</a>
+  <a href="/ui/export.html">📦 Export</a>
+  <a href="/viewer/" class="active" aria-current="page">👁 Viewer</a>
+</nav>
+
 <div id="app"></div>
 
-<div id="hud" class="panel">
+<div id="hud" class="panel viewer-hud">
   <h1 id="siteName">terragen</h1>
   <div class="sub" id="siteSub">încarc…</div>
   <div id="layers"></div>
@@ -65,7 +26,7 @@
     <label><input type="checkbox" id="wire" /> wireframe</label></div>
   <div class="row"><label><input type="checkbox" id="spin" /> rotire automată</label>
     <span class="tris" id="sunLabel">soare 14:00</span></div>
-  <div class="row"><input type="range" id="sun" min="6" max="19" step="0.25" value="14" style="width:100%" /></div>
+  <div class="row"><input type="range" id="sun" min="6" max="19" step="0.25" value="14" /></div>
   <hr />
   <div class="btns">
     <button class="btn" id="reset">⌂ vederea de sus</button>
@@ -77,8 +38,8 @@
 <div id="stats" class="panel"></div>
 <div id="hint" class="panel">trage = rotire · scroll = zoom · <kbd>spațiu</kbd> rotire automată</div>
 <div id="loader"><div class="box">
-  <div style="font-size:12px;letter-spacing:.16em;color:#93a1b1">TERRAGEN</div>
-  <div id="loadMsg" style="margin-top:6px">încarc orașul…</div>
+  <div class="loader-brand">TERRAGEN</div>
+  <div id="loadMsg" class="loader-msg">încarc orașul…</div>
   <div class="bar"><i id="loadBar"></i></div>
 </div></div>
 <div id="err"></div>

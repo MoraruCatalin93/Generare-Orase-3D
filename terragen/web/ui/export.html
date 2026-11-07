@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Export Blender & Chunk-uri · Terragen</title>
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="/ui/theme.css">
+  <link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+  <!-- Bara Comună de Navigare -->
+  <nav class="app-nav" aria-label="Navigare principală">
+    <a href="/">🗺 Hartă</a>
+    <a href="/ui/zone-draw.html">⬡ Zone</a>
+    <a href="/ui/terrain.html">⛰ Teren</a>
+    <a href="/ui/export.html" class="active" aria-current="page">📦 Export</a>
+    <a href="/viewer/">👁 Viewer</a>
+  </nav>
+
+  <!-- Harta 3D cu Grila de Chunk-uri -->
+  <div id="map" class="map-wide-panel"></div>
+
+  <!-- HUD Telemetrie Chunk-uri -->
+  <div class="hud" id="hud">
+    <div class="hud-metric">
+      <span class="hud-label">Grilă Chunk-uri</span>
+      <span class="hud-val" id="hudGridDim">0 × 0</span>
+    </div>
+    <div class="hud-metric">
+      <span class="hud-label">Mărime Celulă</span>
+      <span class="hud-val" id="hudChunkSize">512 m</span>
+    </div>
+    <div class="hud-metric">
+      <span class="hud-label">Chunk Selectat</span>
+      <span class="hud-val" id="hudSelectedChunk">Niciunul</span>
+    </div>
+  </div>
+
+  <!-- Panou Lateral -->
+  <aside id="panel" class="panel-wide">
+    <header>
+      <div class="logo">Terragen <span>Export & Chunks</span></div>
+      <a class="btn btn-sm" href="/">← Hartă</a>
+    </header>
+
+    <!-- Selector Proiect Activ -->
+    <section>
+      <div class="label">Proiect Activ <span id="projectSyncStatus" class="status-pill">Local</span></div>
+      <div class="project-selector-row">
+        <select id="projectSelect" style="flex:1;">
+          <option value="">Alegeți un proiect...</option>
+        </select>
+        <button id="refreshProjects" class="btn-sm" title="Reîncarcă lista de proiecte">↻</button>
+      </div>
+
+      <!-- Mesaj de avertizare când nu este selectat niciun proiect -->
+      <div id="noProjectAlert" class="conflict-box" style="margin-top:10px; display:none;">
+        ⚠️ <b>Niciun proiect activ selectat.</b><br>
+        Alegeți un proiect din meniul de mai sus pentru a vizualiza grila de chunk-uri și a genera exportul pentru Blender.
+      </div>
+
+      <!-- Avertisment prietenos RAM pentru lumi mari (>4 km) -->
+      <div id="ramWarningBox" class="conflict-box hidden" style="background:rgba(229,179,103,0.12); border-color:#926d2e; color:#ffd269; margin-top:10px;">
+        💻 <b>Recomandare performanță (Mac mini M4 · 16 GB RAM)</b><br>
+        Lumea curentă are dimensiunea de <b id="ramWorldSizeText">> 4 km</b>. Pentru un consum optim de memorie RAM și export fluid, se recomandă utilizarea grilei de <b>chunk-uri de 512 m</b> și exportul pe plăci independente.
+      </div>
+    </section>
+
+    <div id="exportContent">
+      <!-- 1. Gestiune Grilă de Chunk-uri -->
+      <section id="chunkGridSection">
+        <div class="label">1 · Grilă de Chunk-uri Independente</div>
+
+        <div class="grid2 tight">
+          <div>
+            <label for="chunkSizeSelect">Mărime chunk</label>
+            <select id="chunkSizeSelect">
+              <option value="256">256 m (fin)</option>
+              <option value="512" selected>512 m (recomandat)</option>
+              <option value="1024">1024 m (mare)</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:flex-end;">
+            <button id="btnSetupGrid" class="wide" style="height:35px;">📐 Configurează grilă</button>
+          </div>
+        </div>
+
+        <!-- Statistici grilă -->
+        <div style="display:flex; justify-content:space-between; margin:10px 0 6px; font-size:11.5px; color:var(--color-text-secondary);">
+          <span>Total: <b id="statTotalChunks" style="color:var(--color-text);">0</b></span>
+          <span>Gata: <b id="statBuiltChunks" style="color:var(--color-accent);">0</b></span>
+          <span>În lucru: <b id="statGenChunks" style="color:var(--color-warning);">0</b></span>
+          <span>Negenerate: <b id="statPendingChunks">0</b></span>
+        </div>
+
+        <!-- Acțiuni de generare -->
+        <div class="actions">
+          <button id="btnGenerateAllChunks" class="primary">Generează toate chunk-urile</button>
+          <button id="btnGenerateSelectedChunk" disabled>Generează selectat</button>
+        </div>
+        <div class="actions">
+          <button id="btnCancelGeneration" class="danger wide hidden">✕ Anulează generarea</button>
+        </div>
+
+        <!-- Bară progres generare chunk-uri -->
+        <div id="chunkProgressWrap" class="hidden" style="margin-top:10px;">
+          <div class="label" style="margin-bottom:4px;">
+            <span id="chunkProgressMsg">Generare chunk...</span>
+            <span id="chunkProgressPct" class="range-val-badge">0%</span>
+          </div>
+          <div class="bar"><i id="chunkProgressBar" style="width:0%;"></i></div>
+        </div>
+
+        <div style="margin-top:8px;">
+          <button id="btnValidateChunks" class="btn-sm ghost wide">🔍 Verifică cusături și continuitate între chunk-uri</button>
+          <div id="chunkValidationResult" class="hint" style="margin-top:4px;"></div>
+        </div>
+      </section>
+
+      <!-- 2. Secțiune Export Blender -->
+      <section id="blenderSection">
+        <div class="label">2 · Export Scenă Blender</div>
+
+        <label for="exportMode">Mod organizare export</label>
+        <select id="exportMode">
+          <option value="layer" selected>Mod Straturi (Layer Mode - obiecte pe colecții)</option>
+          <option value="chunk">Mod Chunk-uri (Chunk Grid Mode - plăci independente)</option>
+          <option value="both">Ambele moduri (Layer + Chunk complet)</option>
+        </select>
+
+        <div style="margin-top:10px;">
+          <label>Straturi de exportat:</label>
+          <div class="checks" style="display:grid; grid-template-columns:1fr 1fr; gap:4px 8px;">
+            <label><input type="checkbox" id="layerTerrain" checked> Relief (Teren)</label>
+            <label><input type="checkbox" id="layerBuildings" checked> Clădiri 3D</label>
+            <label><input type="checkbox" id="layerRoads" checked> Rețea drumuri</label>
+            <label><input type="checkbox" id="layerSidewalks" checked> Trotuare</label>
+            <label><input type="checkbox" id="layerVegetation" checked> Vegetație / arbori</label>
+            <label><input type="checkbox" id="layerWater" checked> Bazine de apă</label>
+          </div>
+        </div>
+
+        <div class="checks" style="margin-top:10px;">
+          <label><input type="checkbox" id="optHeightmap" checked> Include Heightmap 16-bit displacement</label>
+          <label><input type="checkbox" id="optGeojson" checked> Include metadate GeoJSON & regiuni</label>
+          <label><input type="checkbox" id="optMaterials" checked> Păstrează materiale & UV-uri PBR</label>
+        </div>
+
+        <div style="margin-top:14px;">
+          <button id="btnExportBlender" class="btn-go wide" style="padding:12px; font-size:13.5px;">
+            ⚡ Exportă pachetul complet pentru Blender
+          </button>
+        </div>
+
+        <!-- Rezultat Export & Comandă Import Blender -->
+        <div id="exportResultWrap" class="hidden" style="margin-top:12px; padding:12px; background:var(--color-surface-elevated); border:1px solid var(--color-border); border-radius:var(--radius-md);">
+          <div style="color:var(--color-accent); font-weight:600; font-size:13px; margin-bottom:6px;">
+            ✔ Export Blender finalizat cu succes!
+          </div>
+
+          <div style="font-size:11.5px; line-height:1.5;">
+            <div>Folder export: <code id="exportFolderText" style="color:var(--color-text);">–</code></div>
+            <div style="margin-top:4px;">Script importator: <code id="exportScriptText" style="color:var(--color-accent);">–</code></div>
+          </div>
+
+          <!-- Buton copiere comandă import -->
+          <div class="actions" style="margin-top:10px;">
+            <button id="btnCopyBlenderCmd" class="primary wide" style="font-size:12px; padding:8px 10px;">
+              📋 Copiază comanda de import Blender
+            </button>
+          </div>
+
+          <!-- Validare explicată pe înțelesul tuturor -->
+          <div id="validationReportBox" style="margin-top:10px; padding:8px 10px; background:rgba(20,25,32,0.8); border:1px solid var(--color-border); border-radius:var(--radius-sm); font-size:11.5px;">
+            <div style="font-weight:600; margin-bottom:4px; color:var(--color-text);">Validare geometrie & cusături:</div>
+            <div id="validationReportContent" style="color:var(--color-text-secondary); line-height:1.5;"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="status" class="hint status-hint-box" role="status"></div>
+  </aside>
+
+  <div id="toast"></div>
+
+  <script src="/vendor/maplibre-gl.js"></script>
+  <script src="/ui/export.js"></script>
+</body>
+</html>

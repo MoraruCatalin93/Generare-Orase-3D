@@ -122,6 +122,9 @@ class GenerationService:
                 name=p["name"],
                 log=job.log,
                 is_cancelled=lambda: job.cancelled,
+                style_preset=p.get("style_preset"),
+                project_id=p.get("project_id"),
+                projects_dir=self.project_manager.root if self.project_manager else None,
             )
             with self.lock:
                 if job.cancelled:

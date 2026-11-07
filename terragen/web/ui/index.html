@@ -5,9 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>terragen — orașe 3D din date reale</title>
 <link rel="stylesheet" href="/vendor/maplibre-gl.css" />
+<link rel="stylesheet" href="/ui/theme.css" />
 <link rel="stylesheet" href="/ui/style.css" />
 </head>
 <body>
+<nav class="app-nav" aria-label="Navigare principală">
+  <a href="/" class="active" aria-current="page">🗺 Hartă</a>
+  <a href="/ui/zone-draw.html">⬡ Zone</a>
+  <a href="/ui/terrain.html">⛰ Teren</a>
+  <a href="/ui/export.html">📦 Export</a>
+  <a href="/viewer/">👁 Viewer</a>
+</nav>
+
 <div id="map"></div>
 
 <!-- ---------------------------------------------------------------- panou -->
@@ -16,6 +25,50 @@
     <div class="logo">terragen<span>·web</span></div>
     <div class="ver" id="ver">v2</div>
   </header>
+
+  <section id="projectSection">
+    <div class="label">Proiect activ <span id="projectSyncStatus" class="status-pill">Fără proiect</span></div>
+    <div class="project-selector-row">
+      <select id="projectSelect" style="flex:1;">
+        <option value="">Fără proiect (oraș simplu)</option>
+      </select>
+      <button id="refreshProjects" class="btn-sm" title="Reîncarcă lista de proiecte">↻</button>
+      <button id="btnNewProject" class="btn-sm accent" title="Creează un proiect nou">+ Nou</button>
+    </div>
+
+    <!-- Acțiuni pentru proiectul activ -->
+    <div id="projectActions" class="project-actions hidden">
+      <button id="btnRenameProject" class="btn-sm" title="Redenumește proiectul">✏ Redenumește</button>
+      <button id="btnDuplicateProject" class="btn-sm" title="Duplică proiectul">⎘ Duplică</button>
+      <button id="btnDeleteProject" class="btn-sm danger" title="Șterge proiectul">🗑 Șterge</button>
+    </div>
+
+    <!-- Formular Proiect Nou -->
+    <div id="newProjectForm" class="new-project-box hidden">
+      <div class="new-project-title">Creează Proiect Nou</div>
+      <label for="newProjName">Nume proiect</label>
+      <input type="text" id="newProjName" placeholder="ex. Brașov Centru" maxlength="60" />
+      <div class="grid2 tight">
+        <label>lat <input type="number" id="newProjLat" step="0.00001" /></label>
+        <label>lon <input type="number" id="newProjLon" step="0.00001" /></label>
+      </div>
+      <div class="grid2 tight">
+        <label>mărime (m) <input type="number" id="newProjSize" step="50" min="200" max="6000" value="1500" /></label>
+        <label>teren
+          <select id="newProjTerrainRes">
+            <option value="192">192 (rapid)</option>
+            <option value="256" selected>256 (normal)</option>
+            <option value="384">384 (fin)</option>
+            <option value="512">512 (max)</option>
+          </select>
+        </label>
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button id="btnCreateProjectSubmit" class="btn-sm accent">Creează</button>
+        <button id="btnCancelNewProject" class="btn-sm ghost">Renunță</button>
+      </div>
+    </div>
+  </section>
 
   <section>
     <a class="btn accent wide" href="/ui/zone-draw.html">✎ Desenează zone</a>

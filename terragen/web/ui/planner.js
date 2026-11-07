@@ -37,9 +37,9 @@
     if (!map.getSource('zone-grid')) map.addSource('zone-grid', { type: 'geojson', data: features(plan) });
     else map.getSource('zone-grid').setData(plan ? features(plan) : blank());
     if (!map.getLayer('zone-grid-fill')) map.addLayer({ id: 'zone-grid-fill', type: 'fill', source: 'zone-grid',
-      paint: { 'fill-color': '#46a9ed', 'fill-opacity': 0.10 } });
+      paint: { 'fill-color': '#35d0a5', 'fill-opacity': 0.12 } });
     if (!map.getLayer('zone-grid-lines')) map.addLayer({ id: 'zone-grid-lines', type: 'line', source: 'zone-grid',
-      paint: { 'line-color': '#49bfff', 'line-width': 2, 'line-opacity': 0.9 } });
+      paint: { 'line-color': '#35d0a5', 'line-width': 2, 'line-opacity': 0.85 } });
   }
 
   function apply(p, remember = true) {

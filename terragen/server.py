@@ -281,6 +281,8 @@ def _generate_staged(job: Job, p: dict) -> dict:
             log=job.log,
             is_cancelled=lambda: job.cancelled,
             style_preset=p.get("style_preset"),
+            project_id=p.get("project_id"),
+            projects_dir=PROJECTS_DIR,
         )
         # De aici publicarea nu mai poate fi anulată; evită cursa cu endpointul.
         with LOCK:
@@ -759,6 +761,8 @@ def api_projects_generate(pid: str):
     pbf = detect_pbf()
     overpass = pbf is None
     name = safe_name(project.slug or project.name)
+    d = request.get_json(silent=True) or {}
+    style_preset = d.get("style_preset") or getattr(project.generation, "style_preset", None)
     params = {
         "lat": project.geographic.center_lat,
         "lon": project.geographic.center_lon,
@@ -772,6 +776,7 @@ def api_projects_generate(pid: str):
         "roofs": project.generation.roofs,
         "seed": project.seed,
         "project_id": project.id,
+        "style_preset": style_preset,
     }
     job = _start_job(params)
     return jsonify(

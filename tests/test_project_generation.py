@@ -1,11 +1,7 @@
-from pathlib import Path
-import json
 import pytest
-
-from conftest import LAT0, LON0, FakeDem
+from conftest import LAT0, LON0
 
 from terragen.cli import generate
-from terragen.export import write_glb, write_obj, write_heightmap, build_network_graph
 from terragen.projects import ProjectManager
 from terragen.services.generation_service import GenerationService, Job
 from terragen.services.site_service import SiteService
@@ -111,3 +107,42 @@ def test_legacy_direct_generation_remains_functional(tmp_path, ways, fake_dem, m
     assert (out_dir / "obj" / "buildings.obj").exists()
     assert (out_dir / "data" / "roads_network.json").exists()
     assert (out_dir / "terrain" / "terrain_heightmap_65.r16").exists()
+
+
+def test_unified_generation_applies_project_terrain_modifiers(tmp_path, ways, fake_dem, monkeypatch):
+    """Verify that generate() with project_id applies sculpted terrain modifiers."""
+    import terragen.cli
+    monkeypatch.setattr(terragen.cli, "Dem", lambda *a, **k: fake_dem)
+
+    p_mgr = ProjectManager(projects_dir=tmp_path / "projects")
+    proj = p_mgr.create_project("Sculpted City", center=(LAT0, LON0), size=500.0)
+    editor = p_mgr.get_terrain_editor(proj.id, base_dem=fake_dem)
+    # Apply raise modifier at center
+    editor.raise_terrain((0.0, 0.0), radius_m=50.0, amount_m=35.0, falloff="linear")
+    p_mgr.save_terrain_editor(proj.id, editor)
+
+    out_base = tmp_path / "out_base"
+    m_base = generate(
+        center=(LAT0, LON0),
+        size=500.0,
+        out=str(out_base),
+        terrain_res=64,
+        ways=ways,
+    )
+
+    out_sculpted = tmp_path / "out_sculpted"
+    m_sculpted = generate(
+        center=(LAT0, LON0),
+        size=500.0,
+        out=str(out_sculpted),
+        terrain_res=64,
+        ways=ways,
+        project_id=proj.id,
+        projects_dir=tmp_path / "projects",
+    )
+
+    # Elevation range and max altitude should be strictly higher in the sculpted world
+    assert m_sculpted["stats"]["terrain_elev_range"] != m_base["stats"]["terrain_elev_range"]
+    assert (out_sculpted / "manifest.json").exists()
+    assert (out_sculpted / "glb" / "terrain.glb").exists()
+

@@ -855,6 +855,9 @@ class ModifiedDem:
         self.editor = editor
         self.proj = proj
 
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.base_dem, name)
+
     def heights(self, lons: Any, lats: Any) -> np.ndarray:
         # 1. Query original read-only DEM
         base_z = self.base_dem.heights(lons, lats)

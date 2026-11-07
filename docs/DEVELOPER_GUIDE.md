@@ -66,22 +66,22 @@ flowchart TD
 
 | Module / Package | Primary Responsibility |
 | :--- | :--- |
-| [`terragen/projects/model.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/model.py) | Strongly-typed dataclasses for `Project`, `Region`, `ChunkItem`, `ChunkGrid`, `TerrainSettings`, `CoordinateSystem`. |
-| [`terragen/projects/manager.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/manager.py) | CRUD operations, project persistence, atomic file saving, region operations, chunk orchestration. |
-| [`terragen/projects/chunks.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/chunks.py) | Chunk grid partitioning, staged chunk generation, owner-chunk building deduplication, seam continuity. |
-| [`terragen/projects/migration.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/migration.py) | Schema migrations (`schema_version: 1`), legacy metadata migration, backwards-compatible upgrades. |
-| [`terragen/projects/validation.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/validation.py) | Project validation, repair for corrupted JSON fields, and integrity checks. |
-| [`terragen/projects/regions.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/regions.py) | Region geometry computation, geodesic area, perimeter, bounding box, polygon hole validation. |
-| [`terragen/terrain_editor.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/terrain_editor.py) | Non-destructive terrain modifiers, undo/redo stack, brush falloffs, `ModifiedDem` elevation layer. |
-| [`terragen/styles.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/styles.py) | Style presets (`european_town`, `rural`, `forest`, `mountains`), color palettes, spatial vegetation rules. |
-| [`terragen/blender_export.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/blender_export.py) | Blender export orchestrator, multi-node GLB writer, binary GLB parser, importer script generator. |
-| [`terragen/services/`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/services/) | Decoupled business logic isolated from Flask (`GenerationService`, `ElevationService`, `ExportService`). |
-| [`terragen/build.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/build.py) | Procedural city builder: terrain mesh triangulation, road buffering, building extrusion, roofs. |
-| [`terragen/geom.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/geom.py) | Polygon triangulation (ear clipping / earcut), 1D smoothing, mesh normals, bounding boxes. |
-| [`terragen/dem.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/dem.py) | Mapzen/Terrarium elevation tile fetching, decoding, bilinear interpolation, local caching. |
-| [`terragen/osmdata.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/osmdata.py) | Overpass API downloader and offline `.osm.pbf` extraction parser using `osmium`. |
-| [`terragen/export.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/export.py) | GLB/glTF 2.0 single mesh writer, OBJ/MTL writer, 16-bit heightmap binary `.r16` writer. |
-| [`terragen/server.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/server.py) | Flask web application, CSRF protection, request validation, and REST API dispatching. |
+| [`terragen/projects/model.py`](../terragen/projects/model.py) | Strongly-typed dataclasses for `Project`, `Region`, `ChunkItem`, `ChunkGrid`, `TerrainSettings`, `CoordinateSystem`. |
+| [`terragen/projects/manager.py`](../terragen/projects/manager.py) | CRUD operations, project persistence, atomic file saving, region operations, chunk orchestration. |
+| [`terragen/projects/chunks.py`](../terragen/projects/chunks.py) | Chunk grid partitioning, staged chunk generation, owner-chunk building deduplication, seam continuity. |
+| [`terragen/projects/migration.py`](../terragen/projects/migration.py) | Schema migrations (`schema_version: 1`), legacy metadata migration, backwards-compatible upgrades. |
+| [`terragen/projects/validation.py`](../terragen/projects/validation.py) | Project validation, repair for corrupted JSON fields, and integrity checks. |
+| [`terragen/projects/regions.py`](../terragen/projects/regions.py) | Region geometry computation, geodesic area, perimeter, bounding box, polygon hole validation. |
+| [`terragen/terrain_editor.py`](../terragen/terrain_editor.py) | Non-destructive terrain modifiers, undo/redo stack, brush falloffs, `ModifiedDem` elevation layer. |
+| [`terragen/styles.py`](../terragen/styles.py) | Style presets (`european_town`, `rural`, `forest`, `mountains`), color palettes, spatial vegetation rules. |
+| [`terragen/blender_export.py`](../terragen/blender_export.py) | Blender export orchestrator, multi-node GLB writer, binary GLB parser, importer script generator. |
+| [`terragen/services/`](../terragen/services/) | Decoupled business logic isolated from Flask (`GenerationService`, `ElevationService`, `ExportService`). |
+| [`terragen/build.py`](../terragen/build.py) | Procedural city builder: terrain mesh triangulation, road buffering, building extrusion, roofs. |
+| [`terragen/geom.py`](../terragen/geom.py) | Polygon triangulation (ear clipping / earcut), 1D smoothing, mesh normals, bounding boxes. |
+| [`terragen/dem.py`](../terragen/dem.py) | Mapzen/Terrarium elevation tile fetching, decoding, bilinear interpolation, local caching. |
+| [`terragen/osmdata.py`](../terragen/osmdata.py) | Overpass API downloader and offline `.osm.pbf` extraction parser using `osmium`. |
+| [`terragen/export.py`](../terragen/export.py) | GLB/glTF 2.0 single mesh writer, OBJ/MTL writer, 16-bit heightmap binary `.r16` writer. |
+| [`terragen/server.py`](../terragen/server.py) | Flask web application, CSRF protection, request validation, and REST API dispatching. |
 
 ---
 
@@ -208,7 +208,7 @@ Blender's native glTF importer automatically performs the $-Z \to +Y$ axis conve
 
 ## 5. Chunk Engine Architecture
 
-The chunk subsystem ([`terragen/projects/chunks.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/projects/chunks.py)) manages spatial subdivision:
+The chunk subsystem ([`terragen/projects/chunks.py`](../terragen/projects/chunks.py)) manages spatial subdivision:
 
 1. **Grid Calculation**:
    Given world size $W$ and chunk dimension $C$ (default 512 m):
@@ -245,7 +245,7 @@ When `ChunkEngine.generate_chunk` or `CityBuilder.build` executes:
 
 ## 7. Export Pipeline (`BlenderExportPipeline`)
 
-Located in [`terragen/blender_export.py`](file:///Users/morarucatalin/Documents/Git/Generare-Orase-3D/terragen/blender_export.py):
+Located in [`terragen/blender_export.py`](../terragen/blender_export.py):
 
 - **Pre-Export Validation**: Validates geographic bounds, projection parameters, modifier stack health, and file permissions before allocating geometry buffers.
 - **`write_multi_mesh_glb`**:

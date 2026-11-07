@@ -29,6 +29,7 @@ import numpy as np
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
+from ..build import building_color, building_height, road_width
 from ..dem import Dem
 from ..geom import Mesh
 from ..project import LocalProjection
@@ -472,9 +473,10 @@ class ChunkEngine:
                                     # Road ribbon
                                     from ..geom import smooth_1d
                                     z = smooth_1d(z, 5)
-                                    # Buffer road strip
+                                    # Buffer road strip using unified road width
                                     w_scale = preset.roads.width_scale if preset else 1.0
-                                    poly = p.buffer(3.5 * w_scale, cap_style="flat", join_style="round")
+                                    r_width = road_width(tags) * w_scale
+                                    poly = p.buffer(r_width / 2.0, cap_style="flat", join_style="round")
                                     if poly.is_empty:
                                         continue
                                     chunk_road_polys.append(poly)
@@ -514,18 +516,21 @@ class ChunkEngine:
                                 chunk_bld_polys.append(poly)
                                 c_lon, c_lat = self.proj.to_lonlat(poly.centroid.x, poly.centroid.y)
                                 base_z = float(dem.heights(c_lon, c_lat))
-                                b_h = 9.0 * (preset.building.height_scale if preset else 1.0)
-                                if preset and preset.building.height_variation > 0:
-                                    rnd_h = ((int(hashlib.md5(f"hvar{getattr(w, 'id', 0)}-{chunk_seed}".encode()).hexdigest()[:6], 16) % 1000) / 1000.0 - 0.5) * 2.0
-                                    b_h = max(2.6, b_h * (1.0 + rnd_h * preset.building.height_variation))
+                                wid = getattr(w, "id", 0)
+                                b_h = building_height(tags, wid, chunk_seed)
+                                if preset:
+                                    b_h *= preset.building.height_scale
+                                    if preset.building.height_variation > 0:
+                                        rnd_h = ((int(hashlib.md5(f"hvar{wid}-{chunk_seed}".encode()).hexdigest()[:6], 16) % 1000) / 1000.0 - 0.5) * 2.0
+                                        b_h = max(2.6, b_h * (1.0 + rnd_h * preset.building.height_variation))
                                 from ..geom import FLOOR_H, MODULE_U, extrude
                                 v_b, f_b, cap, uv = extrude(poly, base_z - 0.2, base_z + b_h, floor_h=FLOOR_H, module_u=MODULE_U)
                                 if v_b is not None:
-                                    b_hsh = int(hashlib.md5(f"b{getattr(w, 'id', 0)}-{chunk_seed}".encode()).hexdigest()[:6], 16)
+                                    b_hsh = int(hashlib.md5(f"b{wid}-{chunk_seed}".encode()).hexdigest()[:6], 16)
                                     if preset and preset.building.facade_palette:
                                         wall_c = preset.building.facade_palette[b_hsh % len(preset.building.facade_palette)]
                                     else:
-                                        wall_c = (216, 202, 178)
+                                        wall_c = building_color(wid, chunk_seed)
                                     if preset and preset.building.roof_palette:
                                         roof_c = preset.building.roof_palette[b_hsh % len(preset.building.roof_palette)]
                                     else:

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Editor Teren · Terragen</title>
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="/ui/theme.css">
+  <link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+  <!-- Bara Comună de Navigare -->
+  <nav class="app-nav" aria-label="Navigare principală">
+    <a href="/">🗺 Hartă</a>
+    <a href="/ui/zone-draw.html">⬡ Zone</a>
+    <a href="/ui/terrain.html" class="active" aria-current="page">⛰ Teren</a>
+    <a href="/ui/export.html">📦 Export</a>
+    <a href="/viewer/">👁 Viewer</a>
+  </nav>
+
+  <!-- Harta 3D cu relief -->
+  <div id="map" class="map-wide-panel"></div>
+
+  <!-- HUD Metrici și Coordonate Sub Cursor -->
+  <div class="hud" id="hud">
+    <div class="hud-metric">
+      <span class="hud-label">Pensulă Activă</span>
+      <span class="hud-val" id="hudBrush">Ridică / Coboară</span>
+    </div>
+    <div class="hud-metric">
+      <span class="hud-label">Rază & Falloff</span>
+      <span class="hud-val" id="hudRadius">150m (smooth)</span>
+    </div>
+    <div class="hud-metric">
+      <span class="hud-label">Poziție Cursor</span>
+      <span class="hud-val" id="hudCursor">–</span>
+    </div>
+  </div>
+
+  <!-- Panou Lateral Instrumente -->
+  <aside id="panel" class="panel-wide">
+    <header>
+      <div class="logo">Terragen <span>Terrain Editor</span></div>
+      <a class="btn btn-sm" href="/">← Hartă</a>
+    </header>
+
+    <!-- Selector Proiect Activ -->
+    <section>
+      <div class="label">Proiect Activ <span id="projectSyncStatus" class="status-pill">Local</span></div>
+      <div class="project-selector-row">
+        <select id="projectSelect" style="flex:1;">
+          <option value="">Alegeți un proiect...</option>
+        </select>
+        <button id="refreshProjects" class="btn-sm" title="Reîncarcă lista de proiecte">↻</button>
+      </div>
+      <!-- Mesaj de avertizare când nu este selectat niciun proiect -->
+      <div id="noProjectAlert" class="conflict-box" style="margin-top:10px; display:none;">
+        ⚠️ <b>Niciun proiect activ selectat.</b><br>
+        Alegeți un proiect din lista de mai sus sau creați unul în pagina <b>Hartă</b> pentru a putea sculpta relieful.
+      </div>
+    </section>
+
+    <!-- Secțiune Pensule de Sculptare -->
+    <div id="editorContent">
+      <section id="brushesSection">
+        <div class="label">Pensulă Modelare Relief</div>
+        <div class="brush-grid">
+          <button class="brush-btn active" data-op="raise_lower" id="brushRaiseLower">
+            <span class="brush-icon">⇕</span>
+            <span>Ridică/Coboară</span>
+          </button>
+          <button class="brush-btn" data-op="smooth" id="brushSmooth">
+            <span class="brush-icon">〰</span>
+            <span>Netezește</span>
+          </button>
+          <button class="brush-btn" data-op="flatten" id="brushFlatten">
+            <span class="brush-icon">⇳</span>
+            <span>Aplatizează</span>
+          </button>
+          <button class="brush-btn" data-op="hill" id="brushHill">
+            <span class="brush-icon">▲</span>
+            <span>Deal</span>
+          </button>
+          <button class="brush-btn" data-op="valley" id="brushValley">
+            <span class="brush-icon">▼</span>
+            <span>Vale</span>
+          </button>
+          <button class="brush-btn" data-op="water" id="brushWater">
+            <span class="brush-icon">🌊</span>
+            <span>Excavare apă</span>
+          </button>
+        </div>
+
+        <!-- Parametrii pensulei curente -->
+        <div style="margin-top:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+            <label for="brushRadius" style="margin-bottom:0;">Rază acțiune pensulă</label>
+            <span id="brushRadiusVal" class="range-val-badge">150 m</span>
+          </div>
+          <input type="range" id="brushRadius" min="20" max="800" step="10" value="150">
+        </div>
+
+        <div style="margin-top:6px;" id="intensityGroup">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+            <label for="brushIntensity" id="intensityLabel" style="margin-bottom:0;">Intensitate / Deplasare</label>
+            <span id="brushIntensityVal" class="range-val-badge">+15 m</span>
+          </div>
+          <input type="range" id="brushIntensity" min="-60" max="60" step="1" value="15">
+        </div>
+
+        <div style="margin-top:10px;">
+          <label for="brushFalloff">Profil atenuare (Falloff)</label>
+          <select id="brushFalloff">
+            <option value="smooth">Smoothstep (tranzitie fină)</option>
+            <option value="linear">Liniar (pantă uniformă)</option>
+            <option value="gaussian">Gaussian (clopot natural)</option>
+            <option value="flat">Plat (fără atenuare)</option>
+          </select>
+        </div>
+
+        <div class="hint" style="margin-top:8px;">
+          💡 <b>Clic stânga pe hartă</b> pentru a aplica pensula în punctul dorit.
+        </div>
+      </section>
+
+      <!-- Istoric & Modificări Aplicate -->
+      <section>
+        <div class="label" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Modificări Active (<span id="modifierCount">0</span>)</span>
+          <span style="font-size:10px; color:var(--color-text-secondary);">Scurtături: Ctrl+Z / Ctrl+Y</span>
+        </div>
+
+        <div class="actions" style="margin-bottom:8px;">
+          <button id="btnUndo" class="btn-sm" disabled title="Pas înapoi (Ctrl+Z)">↶ Pas înapoi (Undo)</button>
+          <button id="btnRedo" class="btn-sm" disabled title="Pas înainte (Ctrl+Y)">↷ Pas înainte (Redo)</button>
+        </div>
+
+        <div id="modifiersList" style="max-height:180px; overflow-y:auto; padding-right:2px;">
+          <div class="hint">Nicio modificare aplicată încă.</div>
+        </div>
+      </section>
+
+      <!-- Aplicare & Regenerare Teren -->
+      <section>
+        <div class="label">Regenerare Relief Proiect</div>
+        <button id="btnRegenerateTerrain" class="btn-go wide" style="padding:10px 14px; font-size:13px;">
+          ⚡ Aplică și regenerează terenul
+        </button>
+
+        <div id="regenProgressWrap" class="hidden" style="margin-top:12px;">
+          <div class="label" style="margin-bottom:4px;">
+            <span id="regenStatusText">Procesare teren...</span>
+            <span id="regenPctText" class="range-val-badge">0%</span>
+          </div>
+          <div class="bar"><i id="regenProgressBar" style="width:0%;"></i></div>
+        </div>
+
+        <div id="regenResultBox" class="hint hidden" style="margin-top:10px; padding:10px; background:var(--color-surface-elevated); border:1px solid var(--color-border); border-radius:var(--radius-md);">
+          <div style="color:var(--color-accent); font-weight:600; margin-bottom:4px;">✔ Teren actualizat cu succes!</div>
+          <div id="regenDetails" style="font-size:11.5px; line-height:1.5;"></div>
+        </div>
+      </section>
+    </div>
+
+    <div id="status" class="hint status-hint-box" role="status"></div>
+  </aside>
+
+  <div id="toast"></div>
+
+  <script src="/vendor/maplibre-gl.js"></script>
+  <script src="/ui/terrain.js"></script>
+</body>
+</html>

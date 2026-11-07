@@ -2,7 +2,7 @@
    terragen-web · UI: hartă → selectezi zona → generezi → deschizi viewer-ul 3D
    ========================================================================= */
 const $ = (id) => document.getElementById(id);
-const state = { cfg: null, zone: null, job: null, selecting: false, es: null };
+const state = { cfg: null, zone: null, job: null, selecting: false, es: null, activeProjectId: null };
 
 /* ------------------------------------------------------------------ harta */
 const HOME = [24.5612, 46.5446];
@@ -381,10 +381,34 @@ $('btnGo').addEventListener('click', async () => {
 
   let res;
   try {
-    res = await (await fetch('/api/generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })).json();
+    if (state.activeProjectId) {
+      // Sincronizează modificările utilizatorului în proiect înainte de generare
+      try {
+        await fetch(`/api/projects/${encodeURIComponent(state.activeProjectId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: $('name').value.trim() || undefined,
+            seed: +$('seed').value,
+            terrain: { resolution: +$('terrainRes').value },
+            generation: { roofs: $('roofs').checked, formats: $('obj').checked ? ['glb', 'obj'] : ['glb'] },
+            dimensions: { size_x_m: state.zone ? state.zone.size : (+$('size').value || 1500) },
+          }),
+        });
+      } catch {
+        /* continuă cu datele de pe server */
+      }
+
+      res = await (await fetch(`/api/projects/${encodeURIComponent(state.activeProjectId)}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })).json();
+    } else {
+      res = await (await fetch('/api/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })).json();
+    }
   } catch (e) {
     toast('serverul nu răspunde');
     $('btnGo').disabled = false;
@@ -469,10 +493,279 @@ async function renderSitesFromServer() {
   } catch { /* ignoră */ }
 }
 
+/* ------------------------------------------------------------- proiecte */
+async function loadProjects() {
+  const sel = $('projectSelect');
+  if (!sel) return;
+  try {
+    const res = await fetch('/api/projects');
+    if (!res.ok) return;
+    const data = await res.json();
+    const currentVal = state.activeProjectId || sel.value;
+    sel.innerHTML = '<option value="">Fără proiect (oraș simplu)</option>';
+    if (Array.isArray(data.projects)) {
+      data.projects.forEach((p) => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.name} (${p.slug || p.id.slice(0, 8)})`;
+        sel.appendChild(opt);
+      });
+    }
+
+    const savedId = localStorage.getItem('terragen_active_project_id');
+    const targetId = currentVal || savedId;
+    if (targetId && data.projects?.some((p) => p.id === targetId)) {
+      sel.value = targetId;
+      await selectProject(targetId);
+    } else if (!targetId) {
+      sel.value = '';
+      selectProject('');
+    }
+  } catch {
+    /* server offline sau eroare */
+  }
+}
+
+async function selectProject(pid) {
+  state.activeProjectId = pid || null;
+  const actions = $('projectActions');
+  const statusBadge = $('projectSyncStatus');
+
+  if (!pid) {
+    localStorage.removeItem('terragen_active_project_id');
+    if (actions) actions.classList.add('hidden');
+    if (statusBadge) {
+      statusBadge.textContent = 'Fără proiect';
+      statusBadge.className = 'status-pill';
+    }
+    $('btnGo').textContent = '⬢ Generează orașul 3D';
+    return;
+  }
+
+  localStorage.setItem('terragen_active_project_id', pid);
+  if (actions) actions.classList.remove('hidden');
+  if (statusBadge) {
+    statusBadge.textContent = 'Proiect activ';
+    statusBadge.className = 'status-pill status-built';
+  }
+  $('btnGo').textContent = '⬢ Generează proiectul 3D';
+
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(pid)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const p = data.project;
+    if (!p) return;
+
+    if (p.name) $('name').value = p.name;
+    const lat = p.geographic?.center?.lat;
+    const lon = p.geographic?.center?.lon;
+    const size = p.dimensions?.size_x_m || 1500;
+
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      $('lat').value = lat;
+      $('lon').value = lon;
+      $('size').value = size;
+      setZone(lat, lon, size);
+      map.easeTo({ center: [lon, lat], duration: 500 });
+    }
+
+    if (p.terrain?.resolution) {
+      $('terrainRes').value = String(p.terrain.resolution);
+    }
+    if (p.seed !== undefined) {
+      $('seed').value = p.seed;
+    }
+    if (p.generation?.roofs !== undefined) {
+      $('roofs').checked = Boolean(p.generation.roofs);
+    }
+    if (p.generation?.formats) {
+      $('obj').checked = p.generation.formats.includes('obj');
+    }
+  } catch {
+    toast('Eroare la încărcarea detaliilor proiectului');
+  }
+}
+
+function initProjectHandlers() {
+  const sel = $('projectSelect');
+  if (sel) {
+    sel.addEventListener('change', (e) => selectProject(e.target.value));
+  }
+  const btnRefresh = $('refreshProjects');
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => {
+      loadProjects();
+      toast('Lista de proiecte reîmprospătată');
+    });
+  }
+
+  const btnNew = $('btnNewProject');
+  const formBox = $('newProjectForm');
+  const btnCancelNew = $('btnCancelNewProject');
+  const btnCreateSubmit = $('btnCreateProjectSubmit');
+
+  if (btnNew && formBox) {
+    btnNew.addEventListener('click', () => {
+      const isHidden = formBox.classList.contains('hidden');
+      if (isHidden) {
+        const c = map.getCenter();
+        const curLat = state.zone ? state.zone.lat : c.lat;
+        const curLon = state.zone ? state.zone.lon : c.lng;
+        const curSize = state.zone ? state.zone.size : (+$('size').value || 1500);
+
+        $('newProjLat').value = curLat.toFixed(5);
+        $('newProjLon').value = curLon.toFixed(5);
+        $('newProjSize').value = curSize;
+        $('newProjTerrainRes').value = $('terrainRes').value || '256';
+        $('newProjName').value = $('name').value.trim() || 'Proiect Nou';
+        formBox.classList.remove('hidden');
+        $('newProjName').focus();
+      } else {
+        formBox.classList.add('hidden');
+      }
+    });
+  }
+
+  if (btnCancelNew && formBox) {
+    btnCancelNew.addEventListener('click', () => formBox.classList.add('hidden'));
+  }
+
+  if (btnCreateSubmit && formBox) {
+    btnCreateSubmit.addEventListener('click', async () => {
+      const name = $('newProjName').value.trim();
+      if (!name) {
+        toast('Introduceți un nume pentru proiect');
+        $('newProjName').focus();
+        return;
+      }
+      const lat = parseFloat($('newProjLat').value);
+      const lon = parseFloat($('newProjLon').value);
+      const size = parseFloat($('newProjSize').value) || 1500;
+      const terrain_res = parseInt($('newProjTerrainRes').value, 10) || 256;
+      const seed = parseInt($('seed').value, 10) || 7;
+      const roofs = $('roofs').checked;
+
+      btnCreateSubmit.disabled = true;
+      try {
+        const res = await (await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, lat, lon, size, terrain_res, seed, roofs }),
+        })).json();
+
+        if (res.error) {
+          toast(res.error);
+          btnCreateSubmit.disabled = false;
+          return;
+        }
+
+        toast(`Proiectul „${name}" a fost creat cu succes`);
+        formBox.classList.add('hidden');
+        await loadProjects();
+        if (res.project?.id) {
+          $('projectSelect').value = res.project.id;
+          await selectProject(res.project.id);
+        }
+      } catch {
+        toast('Eroare la crearea proiectului pe server');
+      } finally {
+        btnCreateSubmit.disabled = false;
+      }
+    });
+  }
+
+  const btnRename = $('btnRenameProject');
+  if (btnRename) {
+    btnRename.addEventListener('click', async () => {
+      if (!state.activeProjectId) return;
+      const currentName = $('name').value.trim() || 'proiect';
+      const newName = prompt('Introduceți noul nume pentru proiect:', currentName);
+      if (!newName || !newName.trim() || newName.trim() === currentName) return;
+
+      try {
+        const res = await (await fetch(`/api/projects/${encodeURIComponent(state.activeProjectId)}/rename`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName.trim() }),
+        })).json();
+
+        if (res.error) {
+          toast(res.error);
+          return;
+        }
+        $('name').value = newName.trim();
+        toast('Proiect redenumit cu succes');
+        const active = state.activeProjectId;
+        await loadProjects();
+        $('projectSelect').value = active;
+      } catch {
+        toast('Eroare la redenumire');
+      }
+    });
+  }
+
+  const btnDup = $('btnDuplicateProject');
+  if (btnDup) {
+    btnDup.addEventListener('click', async () => {
+      if (!state.activeProjectId) return;
+      try {
+        const res = await (await fetch(`/api/projects/${encodeURIComponent(state.activeProjectId)}/duplicate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })).json();
+
+        if (res.error) {
+          toast(res.error);
+          return;
+        }
+        toast('Proiect duplicat cu succes');
+        await loadProjects();
+        if (res.project?.id) {
+          $('projectSelect').value = res.project.id;
+          await selectProject(res.project.id);
+        }
+      } catch {
+        toast('Eroare la duplicare');
+      }
+    });
+  }
+
+  const btnDel = $('btnDeleteProject');
+  if (btnDel) {
+    btnDel.addEventListener('click', async () => {
+      if (!state.activeProjectId) return;
+      const pName = $('name').value.trim() || 'acest proiect';
+      if (!confirm(`Sigur doriți să ștergeți proiectul „${pName}"? Toate fișierele asociate vor fi eliminate.`)) {
+        return;
+      }
+      try {
+        const res = await (await fetch(`/api/projects/${encodeURIComponent(state.activeProjectId)}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true }),
+        })).json();
+
+        if (res.error) {
+          toast(res.error);
+          return;
+        }
+        toast(`Proiectul „${pName}" a fost șters`);
+        selectProject('');
+        await loadProjects();
+      } catch {
+        toast('Eroare la ștergerea proiectului');
+      }
+    });
+  }
+}
+
 $('btnCancel').addEventListener('click', async () => {
   if (!state.job) return;
   await fetch(`/api/job/${state.job}/cancel`, { method: 'POST' });
   toast('anulare cerută…');
 });
 
-loadConfig();
+initProjectHandlers();
+loadConfig().then(() => loadProjects());

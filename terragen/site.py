@@ -59,6 +59,9 @@ def build_static(site_dir: Path, out_dir: Path) -> Path:
 
     shutil.copytree(VIEWER_DIR / "vendor", dest / "vendor")
     shutil.copy2(VIEWER_DIR / "index.html", dest / "index.html")
+    theme_src = WEB_DIR / "ui" / "theme.css"
+    if theme_src.exists():
+        shutil.copy2(theme_src, dest / "theme.css")
     shutil.copy2(mf, dest / "manifest.json")
     for sub in ("glb", "obj", "data", "terrain"):
         src = site_dir / sub
